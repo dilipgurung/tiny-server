@@ -39,24 +39,24 @@ arm64 | aarch64) ARCH="arm64" ;;
 esac
 
 # --- File Info ---
-FILENAME="${NAME}_${OS}_${ARCH}.tar.gz"
+FILENAME="${NAME}_${VERSION#v}_${OS}_${ARCH}.tar.gz"
 URL="$GITHUB/releases/download/$VERSION/$FILENAME"
-CHECKSUM_URL="$GITHUB/releases/download/$VERSION/checksums.txt"
-
+CHECKSUM_URL="$GITHUB/releases/download/$VERSION/${NAME}_${VERSION#v}_checksums.txt"
+echo $CHECKSUM_URL
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 cd "$TMP_DIR"
 
 # --- Download Files ---
-echo "⬇️ Downloading $FILENAME..."
+echo "⬇️  Downloading $FILENAME..."
 curl -fsSL -O "$URL"
 
-echo "⬇️ Downloading checksums.txt..."
+echo "⬇️  Downloading checksums.txt..."
 curl -fsSL -O "$CHECKSUM_URL"
 
 # --- Verify Checksum ---
 echo "🔐 Verifying checksum..."
-EXPECTED=$(grep "$FILENAME" checksums.txt | cut -d' ' -f1)
+EXPECTED=$(grep "$FILENAME" "${NAME}_${VERSION#v}_checksums.txt" | cut -d' ' -f1)
 ACTUAL=$(shasum -a 256 "$FILENAME" | cut -d' ' -f1)
 
 if [ "$EXPECTED" != "$ACTUAL" ]; then
