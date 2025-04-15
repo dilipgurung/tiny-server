@@ -1,0 +1,31 @@
+project_name: tiny-server
+
+builds:
+  - id: default
+    binary: tiny-server
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X "main.tinyServerVersion={{.Version}}"
+      - -s -w -X "main.goVersion={{.Env.GOVERSION}}"
+
+archives:
+  - id: default
+    builds:
+      - default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - tiny-server
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
