@@ -8,7 +8,6 @@ linters:
     - govet # built-in go vet
     - errcheck # check for ignored errors
     - staticcheck # powerful set of checks, like unused vars, ineffective assignments, etc.
-    - typecheck # type-checking errors (like undeclared names)
     - unused # finds unused code
     - gofmt # formatting issues (informational, not blocking)
     - goimports # import ordering and missing imports
