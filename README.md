@@ -1,6 +1,7 @@
 # tiny-server: a simple static HTTP server
 
-[![Go](https://github.com/dilipgurung/tiny-server/actions/workflows/release.yml/badge.svg)](https://github.com/dilipgurung/tiny-server/actions?query=branch%3Amain++)
+[![Go](https://github.com/dilipgurung/tiny-server/actions/workflows/build.yml/badge.svg)](https://github.com/dilipgurung/tiny-server/actions/workflows/build.yml?query=branch%3Amain++)
+[![Go](https://github.com/dilipgurung/tiny-server/actions/workflows/release.yml/badge.svg)](https://github.com/dilipgurung/tiny-server/actions/workflows/release.yml)
 
 tiny-server is a simple static HTTP server.
 
