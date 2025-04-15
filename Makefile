@@ -4,11 +4,28 @@ APP_VERSION := $(shell git describe --tags 2>/dev/null || echo v0.1.0)
 LDFLAGS += -X "main.tinyServerVersion=$(APP_VERSION)"
 LDFLAGS += -X "main.goVersion=$(shell go version | sed 's/.*go\([^ ]*\).*/\1/')"
 GOBUILD := CGO_ENABLED=0 go
+GOLANGCI_LINT_VERSION = v2.1.2
 
 .PHONY: all
 all: deps test dev
 	@echo "All tasks completed."
 	@echo "You can run the program with 'make dev' or test it with 'make test'."
+
+.PHONY: install-golangci-lint
+install-golangci-lint:
+	@echo "Installing golangci-lint..."
+ifeq (, $(shell which golangci-lint))
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOPATH)/bin $(GOLANGCI_LINT_VERSION)
+else
+	@echo "golangci-lint is already installed at $(shell which golangci-lint)"
+endif
+
+.PHONY: lint
+lint: install-golangci-lint
+	@echo "Running golangci-lint..."
+	@golangci-lint run --timeout 5m ./...
+	@echo "Linting completed."
+	@echo "No issues found."
 
 .PHONY: deps
 deps:

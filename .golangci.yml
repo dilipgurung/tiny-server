@@ -10,11 +10,7 @@ linters:
     - staticcheck # powerful set of checks, like unused vars, ineffective assignments, etc.
     - unused # finds unused code
     - ineffassign # detect useless assignments
-    - deadcode # detect unreachable code
-    - structcheck # unused struct fields
-    - varcheck # unused global vars
     - revive # customizable style guide
-    - exportloopref # common mistake with for-loop references
     - copyloopvar # detects places where loop variables are copied
 
 formatters:
