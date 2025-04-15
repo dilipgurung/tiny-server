@@ -42,7 +42,7 @@ esac
 FILENAME="${NAME}_${VERSION#v}_${OS}_${ARCH}.tar.gz"
 URL="$GITHUB/releases/download/$VERSION/$FILENAME"
 CHECKSUM_URL="$GITHUB/releases/download/$VERSION/${NAME}_${VERSION#v}_checksums.txt"
-echo $CHECKSUM_URL
+
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 cd "$TMP_DIR"
