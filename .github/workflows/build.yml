@@ -22,7 +22,7 @@ jobs:
           go-version: ${{ matrix.go-version }}
 
       - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1
 
@@ -30,7 +30,7 @@ jobs:
         run: go mod tidy
 
       - name: Run linter
-        run: golangci-lint run ./...
+        run: golangci-lint run
 
       - name: Run unit tests
         run: go install github.com/go-delve/delve/cmd/dlv@latest && go test ./... -v -covermode=count -coverprofile=coverage.txt
