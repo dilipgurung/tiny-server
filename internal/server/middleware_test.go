@@ -55,8 +55,6 @@ func TestLiveReloadMiddleware(t *testing.T) {
 		},
 	}
 
-	hub := NewWebSocketHub()
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock file server
@@ -66,7 +64,7 @@ func TestLiveReloadMiddleware(t *testing.T) {
 				w.Write([]byte(tt.content))
 			})
 
-			handler := liveReload(mockHandler, hub, "8080")
+			handler := liveReload(mockHandler, "8080")
 			req := httptest.NewRequest(tt.method, tt.path, nil)
 			rr := httptest.NewRecorder()
 

@@ -10,7 +10,7 @@ import (
 )
 
 // liveReload wraps an http.Handler to inject live reload script
-func liveReload(next http.Handler, hub *WebSocketHub, port string) http.Handler {
+func liveReload(next http.Handler, port string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip non-GET requests and API calls
 		if r.Method != http.MethodGet || strings.HasPrefix(r.URL.Path, "/api/") {

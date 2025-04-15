@@ -134,7 +134,7 @@ func NewServer(port, dir string) (*Server, error) {
 	mux := http.NewServeMux()
 
 	fs := http.FileServer(http.Dir(absPath))
-	wrappedHandler := logRequest(liveReload(fs, hub, port))
+	wrappedHandler := logRequest(liveReload(fs, port))
 	mux.Handle("/", wrappedHandler)
 
 	upgrader := websocket.Upgrader{
@@ -169,7 +169,7 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
-	s.watcher.Close()
+	_ = s.watcher.Close()
 	return s.httpServer.Shutdown(ctx)
 }
 
