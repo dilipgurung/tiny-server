@@ -1,12 +1,21 @@
 version: "2"
 
 run:
-  timeout: 2m
+  timeout: 3m
 
 linters:
   enable:
-    - govet
-    - staticcheck
-    - unused
-    - errcheck
-    - gofmt
+    - govet # built-in go vet
+    - errcheck # check for ignored errors
+    - staticcheck # powerful set of checks, like unused vars, ineffective assignments, etc.
+    - typecheck # type-checking errors (like undeclared names)
+    - unused # finds unused code
+    - gofmt # formatting issues (informational, not blocking)
+    - goimports # import ordering and missing imports
+    - ineffassign # detect useless assignments
+    - deadcode # detect unreachable code
+    - structcheck # unused struct fields
+    - varcheck # unused global vars
+    - revive # customizable style guide
+    - exportloopref # common mistake with for-loop references
+    - copyloopvar # detects places where loop variables are copied
