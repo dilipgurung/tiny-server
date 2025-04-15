@@ -9,7 +9,6 @@ linters:
     - errcheck # check for ignored errors
     - staticcheck # powerful set of checks, like unused vars, ineffective assignments, etc.
     - unused # finds unused code
-    - goimports # import ordering and missing imports
     - ineffassign # detect useless assignments
     - deadcode # detect unreachable code
     - structcheck # unused struct fields
