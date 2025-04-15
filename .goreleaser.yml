@@ -1,8 +1,8 @@
 project_name: tiny-server
 
 builds:
-  - id: default
-    binary: tiny-server
+  - id: tiny-server
+    main: ./cmd/tiny-server
     goos:
       - linux
       - darwin
@@ -17,7 +17,7 @@ builds:
       - -s -w -X "main.goVersion={{.Env.GOVERSION}}"
 
 archives:
-  - id: default
+  - id: tiny-server
     builds:
       - default
     format: tar.gz
