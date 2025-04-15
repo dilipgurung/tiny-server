@@ -1,6 +1,6 @@
 module github.com/dilipgurung/tiny-server
 
-go 1.22.3
+go 1.24.2
 
 require (
 	github.com/fsnotify/fsnotify v1.8.0
