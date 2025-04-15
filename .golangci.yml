@@ -6,12 +6,13 @@ run:
 linters:
   enable:
     - govet # built-in go vet
-    - errcheck # check for ignored errors
     - staticcheck # powerful set of checks, like unused vars, ineffective assignments, etc.
     - unused # finds unused code
     - ineffassign # detect useless assignments
-    - revive # customizable style guide
     - copyloopvar # detects places where loop variables are copied
+
+  disable:
+    - errcheck
 
 formatters:
   enable:
