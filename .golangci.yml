@@ -17,3 +17,8 @@ linters:
     - revive # customizable style guide
     - exportloopref # common mistake with for-loop references
     - copyloopvar # detects places where loop variables are copied
+
+formatters:
+  enable:
+    - goimports
+    - gofmt
