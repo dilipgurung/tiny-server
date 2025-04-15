@@ -1,5 +1,7 @@
 # tiny-server: a simple static HTTP server
 
+[![Go](https://github.com/dilipgurung/tiny-server/actions/workflows/release.yml/badge.svg)](https://github.com/dilipgurung/tiny-server/actions?query=branch%3Amain++)
+
 tiny-server is a simple static HTTP server.
 
 It comes with a live page reload feature. It watches for any changes in your root directory and reloads the page when changes are detected.
@@ -34,7 +36,7 @@ tiny-server -help
 go install github.com/dilipgurung/tiny-server@latest
 ```
 
-### With bash
+### With install.sh
 
 ```shell
 # Install latest
@@ -58,7 +60,7 @@ git clone git@github.com:<YOUR USERNAME>/tiny-server.git
 cd tiny-server
 make deps
 
-# Run the program
+# Run
 make dev
 ```
 
