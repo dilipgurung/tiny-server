@@ -17,15 +17,7 @@ builds:
       - -s -w -X "main.goVersion={{.Env.GOVERSION}}"
 
 archives:
-  - id: tiny-server
-    builds:
-      - default
+  - id: tar.gz
     format: tar.gz
-    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
-    files:
-      - tiny-server
-      - LICENSE
-      - README.md
-
-checksum:
-  name_template: "checksums.txt"
+  - id: binary
+    format: binary
