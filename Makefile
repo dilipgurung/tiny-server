@@ -61,5 +61,5 @@ release:
 		echo "Deleted old tag $$current_tag"; \
 	fi; \
 	echo "Pushing tag to GitHub..."; \
-	@git push origin $$new_tag; \
+	git push origin $$new_tag; \
 	echo "Pushed tag $$new_tag to GitHub"
