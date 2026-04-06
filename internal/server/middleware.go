@@ -8,8 +8,7 @@ import (
 	"time"
 )
 
-// liveReload wraps an http.Handler to inject live reload script
-func liveReload(next http.Handler, port string) http.Handler {
+func liveReload(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip non-GET requests and API calls
 		if r.Method != http.MethodGet || strings.HasPrefix(r.URL.Path, "/api/") {
@@ -37,7 +36,6 @@ func liveReload(next http.Handler, port string) http.Handler {
 	})
 }
 
-// injectLiveReload injects the SSE live reload script into HTML responses
 func injectLiveReloadScript(body []byte) []byte {
 	if strings.Contains(http.DetectContentType(body), "text/html") {
 		if idx := bytes.LastIndex(body, []byte("</body>")); idx != -1 {

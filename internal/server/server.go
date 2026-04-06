@@ -136,7 +136,7 @@ func NewServer(port, dir string) (*Server, error) {
 	mux := http.NewServeMux()
 
 	fs := http.FileServer(http.Dir(absPath))
-	wrappedHandler := logRequest(liveReload(fs, port))
+	wrappedHandler := logRequest(liveReload(fs))
 	mux.Handle("/", wrappedHandler)
 
 	mux.HandleFunc("/.live-reload", SSEHandler(hub))

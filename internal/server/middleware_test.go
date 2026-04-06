@@ -64,7 +64,7 @@ func TestLiveReloadMiddleware(t *testing.T) {
 				w.Write([]byte(tt.content))
 			})
 
-			handler := liveReload(mockHandler, "8080")
+			handler := liveReload(mockHandler)
 			req := httptest.NewRequest(tt.method, tt.path, nil)
 			rr := httptest.NewRecorder()
 
