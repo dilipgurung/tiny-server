@@ -2,8 +2,6 @@ package server
 
 import (
 	"testing"
-
-	"github.com/gorilla/websocket"
 )
 
 func TestSetupServer(t *testing.T) {
@@ -17,19 +15,25 @@ func TestSetupServer(t *testing.T) {
 	}
 }
 
-func TestWebSocketHub(t *testing.T) {
-	hub := NewWebSocketHub()
+func TestSSEHub(t *testing.T) {
+	hub := NewSSEHub()
 
-	// Test AddConnection
-	testConn := &websocket.Conn{}
-	hub.AddConnection(testConn)
-	if len(hub.connections) != 1 {
-		t.Errorf("Expected 1 connection, got %d", len(hub.connections))
+	// Test addClient
+	ch := make(chan string, 1)
+	hub.addClient(ch)
+	if len(hub.clients) != 1 {
+		t.Errorf("Expected 1 client, got %d", len(hub.clients))
 	}
 
-	// Test RemoveConnection
-	hub.RemoveConnection(testConn)
-	if len(hub.connections) != 0 {
-		t.Errorf("Expected 0 connections, got %d", len(hub.connections))
+	// Test Broadcast delivers message
+	hub.Broadcast("reload")
+	if msg := <-ch; msg != "reload" {
+		t.Errorf("Expected 'reload', got %q", msg)
+	}
+
+	// Test removeClient
+	hub.removeClient(ch)
+	if len(hub.clients) != 0 {
+		t.Errorf("Expected 0 clients, got %d", len(hub.clients))
 	}
 }
