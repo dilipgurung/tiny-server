@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -51,6 +52,11 @@ func (h *SSEHub) Broadcast(message string) {
 
 func SSEHandler(hub *SSEHub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -72,7 +78,12 @@ func SSEHandler(hub *SSEHub) http.HandlerFunc {
 		for {
 			select {
 			case msg := <-ch:
-				fmt.Fprintf(w, "data: %s\n\n", msg)
+				encoded, err := json.Marshal(msg)
+				if err != nil {
+					log.Printf("SSEHandler: failed to marshal message: %v", err)
+					continue
+				}
+				fmt.Fprintf(w, "data: %s\n\n", encoded)
 				flusher.Flush()
 			case <-r.Context().Done():
 				return
