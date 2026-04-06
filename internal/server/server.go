@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -78,12 +77,7 @@ func SSEHandler(hub *SSEHub) http.HandlerFunc {
 		for {
 			select {
 			case msg := <-ch:
-				encoded, err := json.Marshal(msg)
-				if err != nil {
-					log.Printf("SSEHandler: failed to marshal message: %v", err)
-					continue
-				}
-				fmt.Fprintf(w, "data: %s\n\n", encoded)
+				fmt.Fprintf(w, "data: %s\n\n", msg)
 				flusher.Flush()
 			case <-r.Context().Done():
 				return
