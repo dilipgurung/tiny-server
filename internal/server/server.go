@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -9,70 +10,82 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/gorilla/websocket"
 	"github.com/skip2/go-qrcode"
 )
 
-type WebSocketHub struct {
-	connections map[*websocket.Conn]bool
-	mu          sync.Mutex
+type SSEHub struct {
+	clients map[chan string]struct{}
+	mu      sync.Mutex
 }
 
-func NewWebSocketHub() *WebSocketHub {
-	return &WebSocketHub{
-		connections: make(map[*websocket.Conn]bool),
+func NewSSEHub() *SSEHub {
+	return &SSEHub{
+		clients: make(map[chan string]struct{}),
 	}
 }
 
-func (h *WebSocketHub) AddConnection(conn *websocket.Conn) {
+func (h *SSEHub) addClient(ch chan string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.connections[conn] = true
+	h.clients[ch] = struct{}{}
 }
 
-func (h *WebSocketHub) RemoveConnection(conn *websocket.Conn) {
+func (h *SSEHub) removeClient(ch chan string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	delete(h.connections, conn)
+	delete(h.clients, ch)
 }
 
-// Broadcast sends a message to all connected WebSocket clients
-func (h *WebSocketHub) Broadcast(message string) {
+// Broadcast sends a message to all connected SSE clients
+func (h *SSEHub) Broadcast(message string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	for conn := range h.connections {
-		if err := conn.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
-			log.Printf("WebSocket write error: %v", err)
-			conn.Close()
-			delete(h.connections, conn)
+	for ch := range h.clients {
+		select {
+		case ch <- message:
+		default:
+			// client too slow; skip rather than block
 		}
 	}
 }
 
-func WebSocketHandler(hub *WebSocketHub, upgrader websocket.Upgrader) http.HandlerFunc {
+func SSEHandler(hub *SSEHub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			log.Printf("WebSocket upgrade error: %v", err)
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		defer func() {
-			hub.RemoveConnection(conn)
-			if err := conn.Close(); err != nil {
-				log.Printf("Error closing WebSocket connection: %v", err)
-			}
-		}()
 
-		hub.AddConnection(conn)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
 
-		// Keep the connection alive and handle errors
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		// Send an initial comment to establish the connection
+		fmt.Fprint(w, ": connected\n\n")
+		flusher.Flush()
+
+		ch := make(chan string, 1)
+		hub.addClient(ch)
+		defer hub.removeClient(ch)
+
 		for {
-			_, _, err := conn.NextReader()
-			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Printf("WebSocket error: %v", err)
+			select {
+			case msg := <-ch:
+				encoded, err := json.Marshal(msg)
+				if err != nil {
+					log.Printf("SSEHandler: failed to marshal message: %v", err)
+					continue
 				}
+				fmt.Fprintf(w, "data: %s\n\n", encoded)
+				flusher.Flush()
+			case <-r.Context().Done():
 				return
 			}
 		}
@@ -120,7 +133,7 @@ func GetNetworkAddresses(port string) (string, []string, error) {
 
 type Server struct {
 	httpServer *http.Server
-	hub        *WebSocketHub
+	hub        *SSEHub
 	watcher    *Watcher
 }
 
@@ -130,19 +143,14 @@ func NewServer(port, dir string) (*Server, error) {
 		return nil, fmt.Errorf("error getting absolute path: %w", err)
 	}
 
-	hub := NewWebSocketHub()
+	hub := NewSSEHub()
 	mux := http.NewServeMux()
 
 	fs := http.FileServer(http.Dir(absPath))
-	wrappedHandler := logRequest(liveReload(fs, port))
+	wrappedHandler := logRequest(liveReload(fs))
 	mux.Handle("/", wrappedHandler)
 
-	upgrader := websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-	}
-
-	mux.HandleFunc("/.live-reload", WebSocketHandler(hub, upgrader))
+	mux.HandleFunc("/.live-reload", SSEHandler(hub))
 
 	watcher, err := NewWatcher(hub)
 	if err != nil {

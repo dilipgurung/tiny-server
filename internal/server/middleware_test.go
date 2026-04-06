@@ -64,7 +64,7 @@ func TestLiveReloadMiddleware(t *testing.T) {
 				w.Write([]byte(tt.content))
 			})
 
-			handler := liveReload(mockHandler, "8080")
+			handler := liveReload(mockHandler)
 			req := httptest.NewRequest(tt.method, tt.path, nil)
 			rr := httptest.NewRecorder()
 
@@ -75,7 +75,7 @@ func TestLiveReloadMiddleware(t *testing.T) {
 			}
 
 			body := rr.Body.String()
-			hasScript := strings.Contains(body, "connectWebSocket()")
+			hasScript := strings.Contains(body, "EventSource")
 
 			if hasScript != tt.wantScript {
 				t.Errorf("Script injection mismatch: want %v, got %v", tt.wantScript, hasScript)

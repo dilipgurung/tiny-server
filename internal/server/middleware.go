@@ -2,15 +2,13 @@ package server
 
 import (
 	"bytes"
-	"fmt"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 )
 
-// liveReload wraps an http.Handler to inject live reload script
-func liveReload(next http.Handler, port string) http.Handler {
+func liveReload(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip non-GET requests and API calls
 		if r.Method != http.MethodGet || strings.HasPrefix(r.URL.Path, "/api/") {
@@ -29,7 +27,7 @@ func liveReload(next http.Handler, port string) http.Handler {
 
 		body := recorder.buf.Bytes()
 		if recorder.statusCode == http.StatusOK {
-			body = injectLiveReloadScript(body, port)
+			body = injectLiveReloadScript(body)
 		}
 
 		if r.Method != http.MethodHead {
@@ -38,38 +36,28 @@ func liveReload(next http.Handler, port string) http.Handler {
 	})
 }
 
-// injectLiveReload injects the WebSocket live reload script into HTML responses
-func injectLiveReloadScript(body []byte, port string) []byte {
+func injectLiveReloadScript(body []byte) []byte {
 	if strings.Contains(http.DetectContentType(body), "text/html") {
 		if idx := bytes.LastIndex(body, []byte("</body>")); idx != -1 {
-			script := []byte(fmt.Sprintf(`
+			script := []byte(`
 				<script>
-					// Live reload via WebSocket
+					// Live reload via Server-Sent Events
 					(function () {
-						function connectWebSocket() {
-							const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
-							const ws = new WebSocket(wsProtocol + "://" + location.hostname + ":%s/.live-reload");
+						const evtSource = new EventSource("/.live-reload");
 
-							ws.onopen = () => console.log('Live reload connected');
-							ws.onmessage = (event) => {
-								if (event.data === 'reload') {
-									console.log('Reloading page...');
-									window.location.reload();
-								}
-							};
-							ws.onclose = () => {
-								console.log('Live reload disconnected - reconnecting...');
-								setTimeout(connectWebSocket, 1000);
-							};
-							ws.onerror = (err) => {
-								console.error('WebSocket error:', err);
-							};
-						}
-
-						connectWebSocket();
+						evtSource.onopen = () => console.log('Live reload connected');
+						evtSource.onmessage = (event) => {
+							if (event.data === 'reload') {
+								console.log('Reloading page...');
+								window.location.reload();
+							}
+						};
+						evtSource.onerror = (err) => {
+							console.error('Live reload error - reconnecting...', err);
+						};
 					})();
 				</script>
-			`, port))
+			`)
 			return append(body[:idx], append(script, body[idx:]...)...)
 		}
 	}

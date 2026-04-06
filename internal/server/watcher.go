@@ -11,11 +11,11 @@ import (
 
 type Watcher struct {
 	watcher           *fsnotify.Watcher
-	hub               *WebSocketHub
+	hub               *SSEHub
 	gitignorePatterns []string
 }
 
-func NewWatcher(hub *WebSocketHub) (*Watcher, error) {
+func NewWatcher(hub *SSEHub) (*Watcher, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err

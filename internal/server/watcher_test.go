@@ -3,7 +3,7 @@ package server
 import "testing"
 
 func TestNewWatcher(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewSSEHub()
 	watcher, err := NewWatcher(hub)
 	if err != nil {
 		t.Fatalf("Failed to create watcher: %v", err)
