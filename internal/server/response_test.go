@@ -14,7 +14,10 @@ import (
 // the response has the correct status, Content-Type, Content-Length, and
 // injected live-reload script.
 func TestFullStackHTMLResponse(t *testing.T) {
-	srv, err := NewServer("0", "testdata_dotfiles")
+	dir := mkdirFiles(t, map[string]string{
+		"index.html": "<html><body>hello</body></html>",
+	})
+	srv, err := NewServer("0", dir)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}

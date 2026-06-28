@@ -9,6 +9,11 @@ import (
 // .gitignore patterns from the served directory rather than the process
 // working directory.
 func TestWatcherReadsGitignoreFromServedDir(t *testing.T) {
+	dir := mkdirFiles(t, map[string]string{
+		".gitignore":   "ignored.log\nsecret.txt\n",
+		"index.html":   "hello",
+		"sub/note.txt": "note",
+	})
 	hub := NewSSEHub()
 	watcher, err := NewWatcher(hub)
 	if err != nil {
@@ -16,7 +21,7 @@ func TestWatcherReadsGitignoreFromServedDir(t *testing.T) {
 	}
 	defer func() { _ = watcher.Close() }()
 
-	if err := watcher.WatchDirectory("testdata_watcher"); err != nil {
+	if err := watcher.WatchDirectory(dir); err != nil {
 		t.Fatalf("WatchDirectory: %v", err)
 	}
 
@@ -39,6 +44,11 @@ func TestWatcherReadsGitignoreFromServedDir(t *testing.T) {
 // TestWatcherIgnoresGitignoredFiles verifies that files matching the served
 // directory's .gitignore are not watched.
 func TestWatcherIgnoresGitignoredFiles(t *testing.T) {
+	dir := mkdirFiles(t, map[string]string{
+		".gitignore":   "ignored.log\nsecret.txt\n",
+		"index.html":   "hello",
+		"sub/note.txt": "note",
+	})
 	hub := NewSSEHub()
 	watcher, err := NewWatcher(hub)
 	if err != nil {
@@ -46,11 +56,11 @@ func TestWatcherIgnoresGitignoredFiles(t *testing.T) {
 	}
 	defer func() { _ = watcher.Close() }()
 
-	if err := watcher.WatchDirectory("testdata_watcher"); err != nil {
+	if err := watcher.WatchDirectory(dir); err != nil {
 		t.Fatalf("WatchDirectory: %v", err)
 	}
 
-	abs, err := filepath.Abs("testdata_watcher")
+	abs, err := filepath.Abs(dir)
 	if err != nil {
 		t.Fatalf("Abs: %v", err)
 	}
@@ -68,7 +78,7 @@ func TestWatcherIgnoresGitignoredFiles(t *testing.T) {
 		t.Errorf("secret.txt should not be watched")
 	}
 	// The root directory itself should be watched.
-	if !watched[filepath.Base(abs)] && !watched["testdata_watcher"] {
+	if !watched[filepath.Base(abs)] && !watched[filepath.Base(dir)] {
 		// WatchList returns absolute paths; the dir base may collide with
 		// other test dirs, so just verify the root path is present.
 		found := false
