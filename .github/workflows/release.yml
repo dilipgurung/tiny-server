@@ -32,7 +32,7 @@ jobs:
         run: echo ${{ env.GOVERSION }} ${{ env.VERSION }}
 
       - name: Set up GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: latest
           args: release --clean
