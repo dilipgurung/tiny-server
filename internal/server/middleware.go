@@ -8,6 +8,36 @@ import (
 	"time"
 )
 
+// blockDotfiles rejects requests whose path contains a segment starting
+// with "." (e.g. .env, .git, .gitignore). This prevents the static file
+// server from leaking dotfiles that live in the served directory.
+func blockDotfiles(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isDotfilePath(r.URL.Path) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isDotfilePath reports whether any segment of the cleaned path begins with
+// ".". The root path "/" is allowed.
+func isDotfilePath(path string) bool {
+	if path == "/" {
+		return false
+	}
+	for _, seg := range strings.Split(path, "/") {
+		if seg == "" {
+			continue
+		}
+		if strings.HasPrefix(seg, ".") {
+			return true
+		}
+	}
+	return false
+}
+
 func liveReload(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip non-GET requests and API calls
