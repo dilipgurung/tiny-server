@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -43,13 +44,20 @@ func main() {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
+	errCh := make(chan error, 1)
+
 	go func() {
-		if err := srv.Start(); err != nil {
-			log.Fatal(err)
+		if err := srv.Start(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
 		}
+		close(errCh)
 	}()
 
-	<-done
+	select {
+	case <-done:
+	case err := <-errCh:
+		log.Print(err)
+	}
 	fmt.Println()
 	log.Println("Shutting down server...")
 
