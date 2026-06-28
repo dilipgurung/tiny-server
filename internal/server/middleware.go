@@ -31,14 +31,14 @@ var liveReloadScript = []byte(`
 				</script>
 			`)
 
-// bodyCloseTag is the case-insensitive marker searched for in the stream.
+// bodyCloseTag is the case-insensitive marker scanned for in the stream.
 var bodyCloseTag = []byte("</body>")
 
-// injectionBufferCap is the maximum number of response bytes buffered while
-// looking for a </body> injection point. Responses that exceed this cap are
-// streamed through verbatim (no live-reload script), which bounds peak
-// memory per request to roughly this size plus the script.
-const injectionBufferCap = 256 << 10 // 256 KB
+// injectionMarkerLen is the length of the marker scanned for. The streaming
+// writer holds back at most injectionMarkerLen-1 bytes to detect a marker
+// split across write boundaries, so its memory is O(marker) regardless of
+// the response size.
+const injectionMarkerLen = len("</body>") // 7
 
 // blockDotfiles rejects requests whose path contains a segment starting
 // with "." (e.g. .env, .git, .gitignore). This prevents the static file
@@ -85,49 +85,47 @@ func liveReload(next http.Handler) http.Handler {
 			return
 		}
 
-		iw := &injectWriter{
-			ResponseWriter: w,
-			status:         http.StatusOK,
-			cap:            injectionBufferCap,
-			mode:           modeBuffer,
-		}
+		iw := &injectWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(iw, r)
 		iw.close()
 	})
 }
 
-// injectMode tracks the streaming writer's current phase.
-type injectMode int
-
-const (
-	modeBuffer      injectMode = iota // buffering up to cap looking for </body>
-	modeInjected                      // script already injected; streaming the rest
-	modePassthrough                   // gave up on injection; streaming verbatim
-)
-
-// injectWriter wraps the real ResponseWriter and buffers up to cap bytes to
-// find a </body> injection point for the live-reload script. If the body
-// exceeds the cap (or isn't injectable HTML), it flushes the buffer and
-// streams the remainder verbatim, bounding memory to cap + script size.
+// injectWriter wraps the real ResponseWriter and injects the live-reload
+// script into an HTML stream by scanning for </body> as bytes flow through.
 //
-// It delays WriteHeader until the first byte is sent (or the handler
-// returns) so it can adjust Content-Length when the script is injected.
+// It holds back at most injectionMarkerLen-1 bytes to detect a marker split
+// across write boundaries, so memory is O(marker) regardless of body size
+// and every HTML response gets the script (no size-based skip). When the
+// script is injected the body grows by len(liveReloadScript); Content-Length
+// is adjusted up front when the upstream set it, otherwise it is left absent
+// so net/http chunk-encodes the response.
+//
+// WriteHeader is delayed until the first byte is sent (or the handler
+// returns) so headers can be adjusted. Non-injectable responses (non-200,
+// non-HTML, range/206, etc.) stream through verbatim untouched.
 type injectWriter struct {
 	http.ResponseWriter
-	status     int
-	headerSent bool
-	mode       injectMode
-	buf        bytes.Buffer
-	cap        int
-	canInject  bool
-	evaluated  bool
+	status      int
+	headerSent  bool
+	evaluated   bool
+	canInject   bool
+	passthrough bool
+	injected    bool
+	clAdjusted  bool
+	pending     [injectionMarkerLen]byte
+	pendingLen  int
+}
+
+func (w *injectWriter) pendingSlice() []byte {
+	return w.pending[:w.pendingLen]
 }
 
 func (w *injectWriter) WriteHeader(code int) {
 	if w.headerSent {
 		return
 	}
-	// Record the status but don't forward yet; we may inject.
+	// Record the status but don't forward yet; we may adjust headers.
 	w.status = code
 }
 
@@ -136,67 +134,130 @@ func (w *injectWriter) Write(b []byte) (int, error) {
 	if !w.evaluated {
 		w.evaluate(b)
 	}
-	if w.mode == modePassthrough || w.mode == modeInjected {
+	if w.injected || w.passthrough {
 		return w.ResponseWriter.Write(b)
 	}
 
-	// modeBuffer: buffer up to cap, scanning for </body>.
-	room := w.cap - w.buf.Len()
-	if room <= 0 {
-		w.switchToPassthrough()
-		return w.ResponseWriter.Write(b)
-	}
-	take := n
-	if take > room {
-		take = room
-	}
-	w.buf.Write(b[:take])
+	m := len(bodyCloseTag)
+	pend := w.pendingSlice()
 
-	if w.canInject {
-		if idx := indexFold(w.buf.Bytes(), bodyCloseTag); idx != -1 {
-			w.injectAt(idx)
-			if take < n {
-				_, _ = w.ResponseWriter.Write(b[take:])
+	// Search for the marker in (pending ++ b).
+	idx := -1
+	idxInPending := false
+
+	// (a) marker straddling the pending|b boundary: starts in pending, ends in b.
+	if w.pendingLen > 0 && len(b) > 0 {
+		startMin := w.pendingLen - (m - 1)
+		if startMin < 0 {
+			startMin = 0
+		}
+		for s := startMin; s < w.pendingLen; s++ {
+			plen := w.pendingLen - s // bytes contributed by pending
+			need := m - plen         // bytes required from b
+			if need > len(b) {
+				continue
 			}
-			return n, nil
+			if bytes.EqualFold(pend[s:], bodyCloseTag[:plen]) &&
+				bytes.EqualFold(b[:need], bodyCloseTag[plen:]) {
+				idx = s
+				idxInPending = true
+				break
+			}
+		}
+	}
+	// (b) marker fully within b.
+	if idx == -1 {
+		if j := indexFold(b, bodyCloseTag); j != -1 {
+			idx = j
+			idxInPending = false
 		}
 	}
 
-	if w.buf.Len() >= w.cap {
-		// Cap reached without a </body>: stream the rest verbatim.
-		w.switchToPassthrough()
-		if take < n {
-			_, _ = w.ResponseWriter.Write(b[take:])
+	if idx != -1 {
+		w.ensureHeader()
+		if idxInPending {
+			// Marker starts at pending[idx] and ends in b.
+			plen := w.pendingLen - idx
+			need := m - plen
+			if idx > 0 {
+				_, _ = w.ResponseWriter.Write(pend[:idx])
+			}
+			_, _ = w.ResponseWriter.Write(liveReloadScript)
+			_, _ = w.ResponseWriter.Write(pend[idx:]) // marker head
+			_, _ = w.ResponseWriter.Write(b[:need])   // marker tail
+			_, _ = w.ResponseWriter.Write(b[need:])   // remainder of b
+		} else {
+			// Marker fully in b at offset idx.
+			if w.pendingLen > 0 {
+				_, _ = w.ResponseWriter.Write(pend)
+			}
+			_, _ = w.ResponseWriter.Write(b[:idx])
+			_, _ = w.ResponseWriter.Write(liveReloadScript)
+			_, _ = w.ResponseWriter.Write(b[idx:]) // marker + remainder
 		}
+		w.pendingLen = 0
+		w.injected = true
 		return n, nil
 	}
 
+	// Not found: flush the safe prefix of (pending ++ b) and hold back the
+	// last m-1 bytes, which may start a marker continuing into the next write.
+	w.ensureHeader()
+	L := w.pendingLen + len(b)
+	holdBack := m - 1
+	if holdBack > L {
+		holdBack = L
+	}
+	safeLen := L - holdBack
+	if safeLen <= w.pendingLen {
+		// Flush only from pending; hold pending[safeLen:] ++ b.
+		if safeLen > 0 {
+			_, _ = w.ResponseWriter.Write(pend[:safeLen])
+		}
+		np := w.pendingLen - safeLen
+		copy(w.pending[:], pend[safeLen:])
+		copy(w.pending[np:], b)
+		w.pendingLen = np + len(b)
+	} else {
+		// Flush all pending plus the safe prefix of b; hold b's tail.
+		_, _ = w.ResponseWriter.Write(pend)
+		k := safeLen - w.pendingLen
+		_, _ = w.ResponseWriter.Write(b[:k])
+		copy(w.pending[:], b[k:])
+		w.pendingLen = len(b) - k
+	}
 	return n, nil
 }
 
 // close finalizes the response after the handler returns.
 func (w *injectWriter) close() {
-	if w.mode == modeInjected || w.mode == modePassthrough {
+	if w.injected || w.passthrough {
+		if w.pendingLen > 0 {
+			_, _ = w.ResponseWriter.Write(w.pendingSlice())
+			w.pendingLen = 0
+		}
 		return
 	}
-	// modeBuffer: the full body fit in the buffer and no </body> was found.
-	body := w.buf.Bytes()
-	if len(body) == 0 {
-		// No body was written (e.g. 304 Not Modified). Forward the original
-		// headers and status untouched.
-		w.flushHeader()
+	if !w.evaluated {
+		// No body was written (empty 200, 304, redirect without body, etc.):
+		// forward the original headers and status untouched.
+		w.flushHeaderOriginal()
 		return
+	}
+	// Searching reached EOF without a </body>: flush the held-back bytes and
+	// append the script. Content-Length was already adjusted to account for it.
+	w.ensureHeader()
+	if w.pendingLen > 0 {
+		_, _ = w.ResponseWriter.Write(w.pendingSlice())
+		w.pendingLen = 0
 	}
 	if w.canInject {
-		body = injectLiveReloadScript(body)
+		_, _ = w.ResponseWriter.Write(liveReloadScript)
 	}
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.flushHeader()
-	_, _ = w.ResponseWriter.Write(body)
 }
 
-// evaluate decides on the first Write whether injection is possible, based
-// on the recorded status and the response's Content-Type.
+// evaluate decides on the first Write whether injection is possible, based on
+// the recorded status and the response's Content-Type.
 func (w *injectWriter) evaluate(b []byte) {
 	w.evaluated = true
 	ct := w.Header().Get("Content-Type")
@@ -209,14 +270,27 @@ func (w *injectWriter) evaluate(b []byte) {
 	}
 	w.canInject = w.status == http.StatusOK && strings.HasPrefix(ct, "text/html")
 	if !w.canInject {
-		w.mode = modePassthrough
-		w.flushHeader()
+		w.passthrough = true
+		w.flushHeaderOriginal()
 	}
 }
 
-// flushHeader forwards the recorded status (and the headers already set on
-// the real writer) exactly once.
-func (w *injectWriter) flushHeader() {
+// ensureHeader adjusts Content-Length (when injecting) and forwards the
+// recorded status and headers exactly once.
+func (w *injectWriter) ensureHeader() {
+	if w.headerSent {
+		return
+	}
+	w.headerSent = true
+	if w.canInject {
+		w.adjustContentLength()
+	}
+	w.ResponseWriter.WriteHeader(w.status)
+}
+
+// flushHeaderOriginal forwards the original headers and status without any
+// Content-Length adjustment.
+func (w *injectWriter) flushHeaderOriginal() {
 	if w.headerSent {
 		return
 	}
@@ -224,65 +298,19 @@ func (w *injectWriter) flushHeader() {
 	w.ResponseWriter.WriteHeader(w.status)
 }
 
-// switchToPassthrough flushes the buffered content verbatim and switches to
-// streaming the remainder directly to the client.
-func (w *injectWriter) switchToPassthrough() {
-	w.mode = modePassthrough
-	w.flushHeader()
-	if w.buf.Len() > 0 {
-		_, _ = w.ResponseWriter.Write(w.buf.Bytes())
-		w.buf.Reset()
+// adjustContentLength grows the upstream Content-Length by len(liveReloadScript)
+// so it matches the injected body. If the upstream set no Content-Length it is
+// left absent so net/http chunk-encodes the response.
+func (w *injectWriter) adjustContentLength() {
+	if w.clAdjusted {
+		return
 	}
-}
-
-// injectAt writes the buffered content with the script inserted before the
-// </body> at idx, then streams any subsequent bytes through unchanged.
-func (w *injectWriter) injectAt(idx int) {
-	w.mode = modeInjected
-	// The injected script grows the body by len(liveReloadScript). Adjust
-	// Content-Length if the upstream handler set one; otherwise drop it so
-	// net/http chunk-encodes the response.
+	w.clAdjusted = true
 	if cl := w.Header().Get("Content-Length"); cl != "" {
 		if n, err := strconv.Atoi(cl); err == nil {
 			w.Header().Set("Content-Length", strconv.Itoa(n+len(liveReloadScript)))
 		}
-	} else {
-		w.Header().Del("Content-Length")
 	}
-	w.flushHeader()
-	body := w.buf.Bytes()
-	_, _ = w.ResponseWriter.Write(body[:idx])
-	_, _ = w.ResponseWriter.Write(liveReloadScript)
-	_, _ = w.ResponseWriter.Write(body[idx:])
-	w.buf.Reset()
-}
-
-// injectLiveReloadScript inserts the live-reload snippet into a complete,
-// in-memory HTML body (used when the whole body fit in the buffer). It
-// matches </body> case-insensitively and injects before it; if no </body>
-// is present it falls back to injecting after </html>, and finally appends
-// at the end of the body. Non-HTML content is returned unchanged. It
-// allocates a single copy rather than lowercasing the whole body.
-func injectLiveReloadScript(body []byte) []byte {
-	if !strings.Contains(http.DetectContentType(body), "text/html") {
-		return body
-	}
-	if idx := indexFold(body, bodyCloseTag); idx != -1 {
-		return splice(body, idx, liveReloadScript)
-	}
-	if idx := indexFold(body, []byte("</html>")); idx != -1 {
-		return splice(body, idx+len("</html>"), liveReloadScript)
-	}
-	return append(body, liveReloadScript...)
-}
-
-// splice returns a new byte slice with ins inserted into body at position at.
-func splice(body []byte, at int, ins []byte) []byte {
-	out := make([]byte, 0, len(body)+len(ins))
-	out = append(out, body[:at]...)
-	out = append(out, ins...)
-	out = append(out, body[at:]...)
-	return out
 }
 
 // indexFold returns the index of needle in haystack using case-insensitive
