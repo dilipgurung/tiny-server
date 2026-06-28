@@ -96,20 +96,6 @@ make release VERSION=v1.0.0
 
 Tags are immutable: `make release` requires an explicit `VERSION` and refuses to overwrite an existing tag.
 
-### Branch protection
-
-The `main` branch is protected by a GitHub ruleset (deletion and force-push
-blocked, pull request required). The ruleset definition lives in
-[`.github/rulesets/protect-main.json`](.github/rulesets/protect-main.json) and
-is applied with the GitHub CLI:
-
-```shell
-gh api repos/dilipgurung/tiny-server/rulesets -X POST --input .github/rulesets/protect-main.json
-```
-
-To dry-run the rules first, set `"enforcement": "evaluate"` in the JSON
-before applying. See [GitHub's ruleset docs](https://docs.github.com/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets) for the full set of available rules.
-
 ## License
 
 [MIT License](LICENSE)
