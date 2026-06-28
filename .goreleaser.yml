@@ -21,3 +21,9 @@ archives:
     format: tar.gz
   - id: binary
     format: binary
+
+# Use GitHub's native release-notes generator (the same engine behind the
+# "Generate release notes" button). Categories and exclusions are defined in
+# .github/release.yml and are based on PR labels.
+changelog:
+  use: github-native

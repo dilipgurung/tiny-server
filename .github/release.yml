@@ -1,0 +1,37 @@
+# Configuration for GitHub's auto-generated release notes, used by GoReleaser
+# (changelog.use: github-native in .goreleaser.yml) and the "Generate release
+# notes" button on the GitHub release UI.
+#
+# Categorization is based on pull request labels. Pull requests labelled
+# "skip-changelog" are excluded entirely. Anything not matching a category is
+# grouped under "Other Changes".
+
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+  categories:
+    - title: "🚀 Features"
+      labels:
+        - enhancement
+        - feature
+    - title: "🐛 Bug fixes"
+      labels:
+        - bug
+    - title: "⚡ Performance"
+      labels:
+        - performance
+    - title: "🧰 Maintenance"
+      labels:
+        - chore
+        - maintenance
+        - dependencies
+    - title: "📝 Documentation"
+      labels:
+        - documentation
+    - title: "🧪 Tests"
+      labels:
+        - test
+    - title: "Other Changes"
+      labels:
+        - "*"
