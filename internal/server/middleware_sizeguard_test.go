@@ -7,12 +7,13 @@ import (
 	"testing"
 )
 
-// TestLiveReloadSizeGuard verifies that HTML responses larger than
-// maxBufferedHTML are streamed without injecting the live-reload script.
+// TestLiveReloadSizeGuard verifies that HTML responses larger than the
+// injection buffer cap are streamed without injecting the live-reload
+// script and without buffering the whole body in memory.
 func TestLiveReloadSizeGuard(t *testing.T) {
-	// Build a body just over the threshold, with a </body> so injection
-	// would normally happen.
-	inner := strings.Repeat("x", maxBufferedHTML+1)
+	// Build a body well over the cap, with a </body> so injection would
+	// normally happen if the whole body were buffered.
+	inner := strings.Repeat("x", injectionBufferCap*4)
 	body := "<html><body>" + inner + "</body></html>"
 
 	mockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
