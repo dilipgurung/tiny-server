@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"log"
 	"os"
 	"path/filepath"
@@ -97,9 +98,17 @@ func (w *Watcher) WatchDirectory(root string) error {
 }
 
 func (w *Watcher) Start() {
+	w.StartCtx(context.Background())
+}
+
+// StartCtx launches the event loop goroutine. It returns when ctx is
+// cancelled or the underlying fsnotify watcher is closed.
+func (w *Watcher) StartCtx(ctx context.Context) {
 	go func() {
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case event, ok := <-w.watcher.Events:
 				if !ok {
 					return
