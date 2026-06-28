@@ -14,7 +14,7 @@ func TestWatcherStartCtxStopsOnCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
 	}
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	if err := watcher.WatchDirectory("testdata_watcher"); err != nil {
 		t.Fatalf("WatchDirectory: %v", err)

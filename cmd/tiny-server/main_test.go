@@ -16,7 +16,7 @@ func TestGetServeDirDefault(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
-	defer os.Chdir(cwd)
+	defer func() { _ = os.Chdir(cwd) }()
 
 	if got := getServeDir(""); got != "." {
 		t.Errorf("getServeDir(\"\") = %q, want %q", got, ".")
@@ -35,7 +35,7 @@ func TestGetServeDirPublic(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
-	defer os.Chdir(cwd)
+	defer func() { _ = os.Chdir(cwd) }()
 
 	if got := getServeDir(""); got != "./public" {
 		t.Errorf("getServeDir(\"\") = %q, want %q", got, "./public")

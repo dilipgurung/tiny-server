@@ -64,7 +64,7 @@ func TestWriteResponseHeaderAndBody(t *testing.T) {
 	rec.Header().Set("Content-Type", "text/html; charset=utf-8")
 	rec.Header().Set("X-Custom", "custom-value")
 	rec.WriteHeader(http.StatusTeapot)
-	rec.Write([]byte("ignored-buffer"))
+	_, _ = rec.Write([]byte("ignored-buffer"))
 
 	body := []byte("real-body")
 	WriteResponse(w, rec, body)
@@ -95,7 +95,7 @@ func TestFullStackHTMLResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
-	defer srv.Shutdown(context.Background())
+	defer func() { _ = srv.Shutdown(context.Background()) }()
 
 	ts := httptest.NewServer(srv.httpServer.Handler)
 	defer ts.Close()
@@ -104,7 +104,7 @@ func TestFullStackHTMLResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)

@@ -16,7 +16,7 @@ func TestWatcherDebounceCoalescesBursts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
 	}
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 	// Use a short debounce to keep the test fast.
 	watcher.debounce = 30 * time.Millisecond
 
@@ -64,7 +64,7 @@ func TestWatcherDebounceSeparatesDistinctFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
 	}
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 	watcher.debounce = 30 * time.Millisecond
 
 	if err := watcher.WatchDirectory("testdata_watcher"); err != nil {
@@ -107,7 +107,7 @@ func writeAppend(path, content string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = f.WriteString(content)
 	return err
 }

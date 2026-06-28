@@ -76,7 +76,7 @@ func TestBlockDotfilesEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
-	defer srv.Shutdown(context.Background())
+	defer func() { _ = srv.Shutdown(context.Background()) }()
 
 	ts := httptest.NewServer(srv.httpServer.Handler)
 	defer ts.Close()
@@ -85,7 +85,7 @@ func TestBlockDotfilesEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("GET /.env status = %d, want 403", resp.StatusCode)

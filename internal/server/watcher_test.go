@@ -8,7 +8,7 @@ func TestNewWatcher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create watcher: %v", err)
 	}
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	// Test watching current directory
 	err = watcher.WatchDirectory(".")

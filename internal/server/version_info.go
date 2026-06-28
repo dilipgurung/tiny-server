@@ -31,7 +31,7 @@ func (v *VersionInfo) PrintSplash() {
 
 // PrintSplashTo writes the splash banner to w.
 func (v *VersionInfo) PrintSplashTo(w io.Writer) {
-	fmt.Fprintf(w, `
+	_, _ = fmt.Fprintf(w, `
   _____ _               ____                           
  |_   _(_)_ __  _   _  / ___|  ___ _ ____   _____ _ __ 
    | | | | '_ \| | | | \___ \ / _ \ '__\ \ / / _ \ '__|
@@ -39,6 +39,6 @@ func (v *VersionInfo) PrintSplashTo(w io.Writer) {
    |_| |_|_| |_|\__, | |____/ \___|_|    \_/ \___|_|   
                 |___/                                  
 	`)
-	fmt.Fprintf(w, "\n   %s built with Go %s\n", v.tinyServerVersion, v.goVersion)
-	fmt.Fprintln(w, "   A Simple and lightweight static HTTP server")
+	_, _ = fmt.Fprintf(w, "\n   %s built with Go %s\n", v.tinyServerVersion, v.goVersion)
+	_, _ = fmt.Fprintln(w, "   A Simple and lightweight static HTTP server")
 }

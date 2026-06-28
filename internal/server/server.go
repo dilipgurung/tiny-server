@@ -67,7 +67,9 @@ func SSEHandler(hub *SSEHub) http.HandlerFunc {
 		w.Header().Set("Connection", "keep-alive")
 
 		// Send an initial comment to establish the connection
-		fmt.Fprint(w, ": connected\n\n")
+		if _, err := fmt.Fprint(w, ": connected\n\n"); err != nil {
+			return
+		}
 		flusher.Flush()
 
 		ch := make(chan string, 1)
@@ -77,7 +79,9 @@ func SSEHandler(hub *SSEHub) http.HandlerFunc {
 		for {
 			select {
 			case msg := <-ch:
-				fmt.Fprintf(w, "data: %s\n\n", msg)
+				if _, err := fmt.Fprintf(w, "data: %s\n\n", msg); err != nil {
+					return
+				}
 				flusher.Flush()
 			case <-r.Context().Done():
 				return
