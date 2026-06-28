@@ -137,7 +137,6 @@ func GetNetworkAddresses(port string) (string, []string, error) {
 
 type Server struct {
 	httpServer *http.Server
-	hub        *SSEHub
 	watcher    *Watcher
 }
 
@@ -171,7 +170,6 @@ func NewServer(port, dir string) (*Server, error) {
 			Addr:    ":" + port,
 			Handler: mux,
 		},
-		hub:     hub,
 		watcher: watcher,
 	}, nil
 }
