@@ -4,7 +4,7 @@
   "enforcement": "active",
   "conditions": {
     "ref_name": {
-      "include": ["main"],
+      "include": ["refs/heads/main"],
       "exclude": []
     }
   },
