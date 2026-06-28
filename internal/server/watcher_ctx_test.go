@@ -9,6 +9,9 @@ import (
 // TestWatcherStartCtxStopsOnCancel verifies the event loop goroutine
 // exits when the provided context is cancelled.
 func TestWatcherStartCtxStopsOnCancel(t *testing.T) {
+	dir := mkdirFiles(t, map[string]string{
+		"index.html": "hello",
+	})
 	hub := NewSSEHub()
 	watcher, err := NewWatcher(hub)
 	if err != nil {
@@ -16,7 +19,7 @@ func TestWatcherStartCtxStopsOnCancel(t *testing.T) {
 	}
 	defer func() { _ = watcher.Close() }()
 
-	if err := watcher.WatchDirectory("testdata_watcher"); err != nil {
+	if err := watcher.WatchDirectory(dir); err != nil {
 		t.Fatalf("WatchDirectory: %v", err)
 	}
 

@@ -72,7 +72,11 @@ func TestBlockDotfiles(t *testing.T) {
 // TestBlockDotfilesEndToEnd verifies the full server stack rejects a real
 // .env file served from disk.
 func TestBlockDotfilesEndToEnd(t *testing.T) {
-	srv, err := NewServer("0", "testdata_dotfiles")
+	dir := mkdirFiles(t, map[string]string{
+		".env":       "SECRET=do-not-leak",
+		"index.html": "<html><body>hello</body></html>",
+	})
+	srv, err := NewServer("0", dir)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}

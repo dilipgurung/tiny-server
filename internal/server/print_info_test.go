@@ -11,7 +11,10 @@ import (
 // TestPrintInfo verifies PrintInfo reports the served directory and at
 // least one listen address without error.
 func TestPrintInfo(t *testing.T) {
-	srv, err := NewServer("0", "testdata_dotfiles")
+	dir := mkdirFiles(t, map[string]string{
+		"index.html": "<html><body>hello</body></html>",
+	})
+	srv, err := NewServer("0", dir)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -26,13 +29,13 @@ func TestPrintInfo(t *testing.T) {
 	os.Stdout = w
 	defer func() { os.Stdout = old }()
 
-	srv.PrintInfo("8123", "testdata_dotfiles")
+	srv.PrintInfo("8123", dir)
 	_ = w.Close()
 
 	var buf bytes.Buffer
 	_, _ = buf.ReadFrom(r)
 	out := buf.String()
-	for _, want := range []string{"testdata_dotfiles", "Available on:", "Press CTRL+C"} {
+	for _, want := range []string{dir, "Available on:", "Press CTRL+C"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("PrintInfo output missing %q; got %q", want, out)
 		}
