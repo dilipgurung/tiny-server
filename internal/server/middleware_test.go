@@ -61,7 +61,7 @@ func TestLiveReloadMiddleware(t *testing.T) {
 			mockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", tt.contentType)
 				w.WriteHeader(tt.wantStatus)
-				w.Write([]byte(tt.content))
+				_, _ = w.Write([]byte(tt.content))
 			})
 
 			handler := liveReload(mockHandler)

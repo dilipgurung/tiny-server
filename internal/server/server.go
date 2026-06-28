@@ -67,7 +67,9 @@ func SSEHandler(hub *SSEHub) http.HandlerFunc {
 		w.Header().Set("Connection", "keep-alive")
 
 		// Send an initial comment to establish the connection
-		fmt.Fprint(w, ": connected\n\n")
+		if _, err := fmt.Fprint(w, ": connected\n\n"); err != nil {
+			return
+		}
 		flusher.Flush()
 
 		ch := make(chan string, 1)
@@ -77,13 +79,23 @@ func SSEHandler(hub *SSEHub) http.HandlerFunc {
 		for {
 			select {
 			case msg := <-ch:
-				fmt.Fprintf(w, "data: %s\n\n", msg)
+				if _, err := fmt.Fprintf(w, "data: %s\n\n", msg); err != nil {
+					return
+				}
 				flusher.Flush()
 			case <-r.Context().Done():
 				return
 			}
 		}
 	}
+}
+
+// formatAddress renders a listen address for an IP, bracketing IPv6 literals.
+func formatAddress(ip net.IP, port string) string {
+	if v4 := ip.To4(); v4 != nil {
+		return fmt.Sprintf("http://%s:%s", v4.String(), port)
+	}
+	return fmt.Sprintf("http://[%s]:%s", ip.To16().String(), port)
 }
 
 func GetNetworkAddresses(port string) (string, []string, error) {
@@ -108,12 +120,14 @@ func GetNetworkAddresses(port string) (string, []string, error) {
 			case *net.IPAddr:
 				ip = v.IP
 			}
-			if ip != nil && ip.To4() != nil {
-				addr := fmt.Sprintf("http://%s:%s", ip.String(), port)
-				addresses = append(addresses, addr)
-				if !ip.IsLoopback() && host == "" {
-					host = addr
-				}
+			if ip == nil || ip.IsUnspecified() {
+				continue
+			}
+
+			formatted := formatAddress(ip, port)
+			addresses = append(addresses, formatted)
+			if !ip.IsLoopback() && host == "" {
+				host = formatted
 			}
 		}
 	}
@@ -127,7 +141,6 @@ func GetNetworkAddresses(port string) (string, []string, error) {
 
 type Server struct {
 	httpServer *http.Server
-	hub        *SSEHub
 	watcher    *Watcher
 }
 
@@ -141,7 +154,7 @@ func NewServer(port, dir string) (*Server, error) {
 	mux := http.NewServeMux()
 
 	fs := http.FileServer(http.Dir(absPath))
-	wrappedHandler := logRequest(liveReload(fs))
+	wrappedHandler := logRequest(blockDotfiles(liveReload(fs)))
 	mux.Handle("/", wrappedHandler)
 
 	mux.HandleFunc("/.live-reload", SSEHandler(hub))
@@ -161,7 +174,6 @@ func NewServer(port, dir string) (*Server, error) {
 			Addr:    ":" + port,
 			Handler: mux,
 		},
-		hub:     hub,
 		watcher: watcher,
 	}, nil
 }

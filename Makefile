@@ -52,7 +52,7 @@ build: deps
 .PHONY: dev
 dev:
 	@echo "Running the server in development mode..."
-	@go run ./cmd/tiny-server/*.go
+	@go run ./cmd/tiny-server
 
 .PHONY: install
 install: deps
@@ -63,20 +63,17 @@ install: deps
 .PHONY: release
 release:
 	@set -e; \
-	current_tag=$$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0"); \
-	echo "Current tag: $$current_tag"; \
 	if [ -z "$(VERSION)" ]; then \
-		version=$$(echo $$current_tag | sed 's/^v//' | awk -F. '{printf "%d.%d.%d", $$1, $$2+1, $$3}'); \
-		new_tag="v$$version"; \
-	else \
-		new_tag="$(VERSION)"; \
+		echo "Usage: make release VERSION=v1.0.0"; \
+		echo "Tags are immutable and cannot be recreated. Provide an explicit, unused version."; \
+		exit 1; \
 	fi; \
-	echo "Tagging version $$new_tag"; \
-	git tag -f $$new_tag; \
-	if [ "$$current_tag" != "v0.0.0" ]; then \
-		git tag -d $$current_tag || true; \
-		echo "Deleted old tag $$current_tag"; \
+	if git rev-parse -q --verify "refs/tags/$(VERSION)" >/dev/null; then \
+		echo "Tag $(VERSION) already exists; tags are immutable. Bump the version."; \
+		exit 1; \
 	fi; \
+	echo "Tagging version $(VERSION)"; \
+	git tag $(VERSION); \
 	echo "Pushing tag to GitHub..."; \
-	git push origin $$new_tag; \
-	echo "Pushed tag $$new_tag to GitHub"
+	git push origin $(VERSION); \
+	echo "Pushed tag $(VERSION) to GitHub"

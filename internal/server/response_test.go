@@ -1,35 +1,55 @@
 package server
 
 import (
-	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 )
 
-func TestResponseRecorder(t *testing.T) {
-	rr := httptest.NewRecorder()
-	recorder := NewResponseRecorder(rr)
-
-	// Test Header()
-	h := recorder.Header()
-	h.Set("Test", "Value")
-
-	// Test Write()
-	testBody := []byte("test body")
-	_, err := recorder.Write(testBody)
+// TestFullStackHTMLResponse runs a real .html file through the full
+// middleware chain (blockDotfiles -> liveReload -> file server) and asserts
+// the response has the correct status, Content-Type, Content-Length, and
+// injected live-reload script.
+func TestFullStackHTMLResponse(t *testing.T) {
+	srv, err := NewServer("0", "testdata_dotfiles")
 	if err != nil {
-		t.Errorf("Write failed: %v", err)
+		t.Fatalf("NewServer: %v", err)
 	}
+	defer func() { _ = srv.Shutdown(context.Background()) }()
 
-	// Test WriteHeader()
-	recorder.WriteHeader(http.StatusNotFound)
+	ts := httptest.NewServer(srv.httpServer.Handler)
+	defer ts.Close()
 
-	if recorder.statusCode != http.StatusNotFound {
-		t.Errorf("Expected status %d, got %d", http.StatusNotFound, recorder.statusCode)
+	resp, err := http.Get(ts.URL + "/index.html")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
 
-	if !bytes.Equal(recorder.buf.Bytes(), testBody) {
-		t.Errorf("Expected body %q, got %q", testBody, recorder.buf.Bytes())
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html prefix", ct)
+	}
+	buf := make([]byte, 0, 1024)
+	tmp := make([]byte, 1024)
+	for {
+		n, err := resp.Body.Read(tmp)
+		if n > 0 {
+			buf = append(buf, tmp[:n]...)
+		}
+		if err != nil {
+			break
+		}
+	}
+	if !strings.Contains(string(buf), "EventSource") {
+		t.Errorf("response body missing injected live-reload script")
+	}
+	if cl := resp.Header.Get("Content-Length"); cl != strconv.Itoa(len(buf)) {
+		t.Errorf("Content-Length = %q, want %d", cl, len(buf))
 	}
 }

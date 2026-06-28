@@ -4,6 +4,7 @@ set -e
 REPO="dilipgurung/tiny-server"
 NAME="tiny-server"
 VERSION=""
+PREFIX="${PREFIX:-/usr/local/bin}"
 GITHUB="https://github.com/$REPO"
 
 # --- Parse Args ---
@@ -12,6 +13,17 @@ while [[ $# -gt 0 ]]; do
     --version)
         VERSION="$2"
         shift 2
+        ;;
+    --prefix)
+        PREFIX="$2"
+        shift 2
+        ;;
+    --help|-h)
+        echo "Usage: $0 [--version v1.0.0] [--prefix /usr/local/bin]"
+        echo "  --version   Specific release version to install (default: latest)"
+        echo "  --prefix    Install prefix directory (default: /usr/local/bin;"
+        echo "              can also be set via the PREFIX env var)"
+        exit 0
         ;;
     *)
         echo "❌ Unknown option: $1"
@@ -70,8 +82,17 @@ fi
 echo "📂 Extracting archive..."
 tar -xzf "$FILENAME"
 
-echo "🚀 Installing $NAME to /usr/local/bin (requires sudo)..."
-sudo mv "$NAME" /usr/local/bin/
-sudo chmod +x /usr/local/bin/"$NAME"
+# --- Install ---
+mkdir -p "$PREFIX"
+if [ -w "$PREFIX" ]; then
+    echo "🚀 Installing $NAME to $PREFIX..."
+    mv "$NAME" "$PREFIX/"
+    chmod +x "$PREFIX/$NAME"
+else
+    echo "🚀 Installing $NAME to $PREFIX (requires sudo)..."
+    sudo mv "$NAME" "$PREFIX/"
+    sudo chmod +x "$PREFIX/$NAME"
+fi
 
 echo "✅ $NAME $VERSION installed successfully!"
+echo "   Run '$PREFIX/$NAME -v' to verify."
