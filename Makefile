@@ -76,4 +76,7 @@ release:
 	git tag $(VERSION); \
 	echo "Pushing tag to GitHub..."; \
 	git push origin $(VERSION); \
-	echo "Pushed tag $(VERSION) to GitHub"
+	echo "Pushed tag $(VERSION) to GitHub"; \
+	echo "The Release workflow is now building and uploading assets (~1m)."; \
+	echo "The GitHub release will appear as 'Latest' once the run completes:"; \
+	echo "  https://github.com/dilipgurung/tiny-server/actions"
