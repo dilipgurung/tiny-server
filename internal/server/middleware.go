@@ -60,6 +60,11 @@ func isDotfilePath(path string) bool {
 	return false
 }
 
+// maxBufferedHTML is the upper bound for buffering an HTML response so the
+// live-reload script can be injected. Responses larger than this are streamed
+// as-is without injection, trading the live-reload feature for memory safety.
+const maxBufferedHTML = 1 << 20 // 1 MB
+
 func liveReload(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip non-GET requests and API calls
@@ -78,7 +83,9 @@ func liveReload(next http.Handler) http.Handler {
 		next.ServeHTTP(recorder, r)
 
 		body := recorder.buf.Bytes()
-		if recorder.statusCode == http.StatusOK {
+		// Skip injection for oversized responses: buffering unbounded HTML
+		// would risk high memory use. Stream the captured body as-is.
+		if recorder.statusCode == http.StatusOK && len(body) <= maxBufferedHTML {
 			body = injectLiveReloadScript(body)
 		}
 
