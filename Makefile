@@ -52,7 +52,7 @@ build: deps
 .PHONY: dev
 dev:
 	@echo "Running the server in development mode..."
-	@go run ./cmd/tiny-server/*.go
+	@go run ./cmd/tiny-server
 
 .PHONY: install
 install: deps
