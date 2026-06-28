@@ -86,6 +86,14 @@ func SSEHandler(hub *SSEHub) http.HandlerFunc {
 	}
 }
 
+// formatAddress renders a listen address for an IP, bracketing IPv6 literals.
+func formatAddress(ip net.IP, port string) string {
+	if v4 := ip.To4(); v4 != nil {
+		return fmt.Sprintf("http://%s:%s", v4.String(), port)
+	}
+	return fmt.Sprintf("http://[%s]:%s", ip.To16().String(), port)
+}
+
 func GetNetworkAddresses(port string) (string, []string, error) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
@@ -108,12 +116,14 @@ func GetNetworkAddresses(port string) (string, []string, error) {
 			case *net.IPAddr:
 				ip = v.IP
 			}
-			if ip != nil && ip.To4() != nil {
-				addr := fmt.Sprintf("http://%s:%s", ip.String(), port)
-				addresses = append(addresses, addr)
-				if !ip.IsLoopback() && host == "" {
-					host = addr
-				}
+			if ip == nil || ip.IsUnspecified() {
+				continue
+			}
+
+			formatted := formatAddress(ip, port)
+			addresses = append(addresses, formatted)
+			if !ip.IsLoopback() && host == "" {
+				host = formatted
 			}
 		}
 	}
