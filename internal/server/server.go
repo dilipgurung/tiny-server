@@ -49,7 +49,7 @@ func (h *SSEHub) Broadcast(message string) {
 	}
 }
 
-func SSEHandler(hub *SSEHub) http.HandlerFunc {
+func SSEHandler(hub *SSEHub, shutdownCtx context.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -84,6 +84,12 @@ func SSEHandler(hub *SSEHub) http.HandlerFunc {
 				}
 				flusher.Flush()
 			case <-r.Context().Done():
+				return
+			case <-shutdownCtx.Done():
+				// Server is shutting down: exit promptly so http.Server.Shutdown
+				// doesn't wait for this long-lived SSE connection until its
+				// deadline (which produced "Forced shutdown: context deadline
+				// exceeded" whenever a browser tab was open).
 				return
 			}
 		}
@@ -142,6 +148,7 @@ func GetNetworkAddresses(port string) (string, []string, error) {
 type Server struct {
 	httpServer *http.Server
 	watcher    *Watcher
+	cancel     context.CancelFunc
 }
 
 func NewServer(port, dir string) (*Server, error) {
@@ -153,18 +160,22 @@ func NewServer(port, dir string) (*Server, error) {
 	hub := NewSSEHub()
 	mux := http.NewServeMux()
 
+	shutdownCtx, cancel := context.WithCancel(context.Background())
+
 	fs := http.FileServer(http.Dir(absPath))
 	wrappedHandler := logRequest(blockDotfiles(liveReload(fs)))
 	mux.Handle("/", wrappedHandler)
 
-	mux.HandleFunc("/.live-reload", SSEHandler(hub))
+	mux.HandleFunc("/.live-reload", SSEHandler(hub, shutdownCtx))
 
 	watcher, err := NewWatcher(hub)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("error creating watcher: %w", err)
 	}
 
 	if err := watcher.WatchDirectory(absPath); err != nil {
+		cancel()
 		return nil, fmt.Errorf("error watching directory: %w", err)
 	}
 	watcher.Start()
@@ -175,6 +186,7 @@ func NewServer(port, dir string) (*Server, error) {
 			Handler: mux,
 		},
 		watcher: watcher,
+		cancel:  cancel,
 	}, nil
 }
 
@@ -183,6 +195,11 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	// Cancel the SSE shutdown context first so live-reload EventSource
+	// goroutines exit and release their connections before we wait on
+	// http.Server.Shutdown. Otherwise Shutdown blocks until ctx expires
+	// ("context deadline exceeded") whenever a browser tab is open.
+	s.cancel()
 	_ = s.watcher.Close()
 	return s.httpServer.Shutdown(ctx)
 }
