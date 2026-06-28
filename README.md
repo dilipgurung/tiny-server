@@ -7,6 +7,8 @@ tiny-server is a simple static HTTP server.
 
 It comes with a live page reload feature. It watches for any changes in your root directory and reloads the page when changes are detected.
 
+The watcher reads `.gitignore` from the served directory and applies **simple basename ignore patterns**: only the final path component is matched (no directory paths, no negation with `!`, no `**` globs). Patterns are matched with Go's [`filepath.Match`](https://pkg.go.dev/path/filepath#Match).
+
 ## Usage
 
 ### Start tiny-server
