@@ -8,6 +8,28 @@ import (
 	"time"
 )
 
+// liveReloadScript is the snippet injected into HTML responses to open the
+// Server-Sent Events connection and reload the page on change.
+var liveReloadScript = []byte(`
+				<script>
+					// Live reload via Server-Sent Events
+					(function () {
+						const evtSource = new EventSource("/.live-reload");
+
+						evtSource.onopen = () => console.log('Live reload connected');
+						evtSource.onmessage = (event) => {
+							if (event.data === 'reload') {
+								console.log('Reloading page...');
+								window.location.reload();
+							}
+						};
+						evtSource.onerror = (err) => {
+							console.error('Live reload error - reconnecting...', err);
+						};
+					})();
+				</script>
+			`)
+
 // blockDotfiles rejects requests whose path contains a segment starting
 // with "." (e.g. .env, .git, .gitignore). This prevents the static file
 // server from leaking dotfiles that live in the served directory.
@@ -66,32 +88,28 @@ func liveReload(next http.Handler) http.Handler {
 	})
 }
 
+// injectLiveReloadScript inserts the live-reload snippet into an HTML body.
+// It matches </body> case-insensitively and injects before it; if no
+// </body> is present it falls back to injecting after </html>, and finally
+// appends at the end of the body. Non-HTML content is returned unchanged.
 func injectLiveReloadScript(body []byte) []byte {
-	if strings.Contains(http.DetectContentType(body), "text/html") {
-		if idx := bytes.LastIndex(body, []byte("</body>")); idx != -1 {
-			script := []byte(`
-				<script>
-					// Live reload via Server-Sent Events
-					(function () {
-						const evtSource = new EventSource("/.live-reload");
-
-						evtSource.onopen = () => console.log('Live reload connected');
-						evtSource.onmessage = (event) => {
-							if (event.data === 'reload') {
-								console.log('Reloading page...');
-								window.location.reload();
-							}
-						};
-						evtSource.onerror = (err) => {
-							console.error('Live reload error - reconnecting...', err);
-						};
-					})();
-				</script>
-			`)
-			return append(body[:idx], append(script, body[idx:]...)...)
-		}
+	if !strings.Contains(http.DetectContentType(body), "text/html") {
+		return body
 	}
-	return body
+
+	lower := bytes.ToLower(body)
+
+	// Inject before the first closing </body> (case-insensitive).
+	if idx := bytes.Index(lower, []byte("</body>")); idx != -1 {
+		return append(body[:idx], append(liveReloadScript, body[idx:]...)...)
+	}
+	// Fall back to injecting after </html> (case-insensitive).
+	if idx := bytes.Index(lower, []byte("</html>")); idx != -1 {
+		after := idx + len("</html>")
+		return append(body[:after], append(liveReloadScript, body[after:]...)...)
+	}
+	// No closing tags at all: append at the end of the body.
+	return append(body, liveReloadScript...)
 }
 
 func logRequest(next http.Handler) http.Handler {
