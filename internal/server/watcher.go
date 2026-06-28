@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -13,6 +15,9 @@ type Watcher struct {
 	watcher           *fsnotify.Watcher
 	hub               *SSEHub
 	gitignorePatterns []string
+	debounce          time.Duration
+	mu                sync.Mutex
+	reloadTimers      map[string]*time.Timer
 }
 
 func NewWatcher(hub *SSEHub) (*Watcher, error) {
@@ -25,6 +30,8 @@ func NewWatcher(hub *SSEHub) (*Watcher, error) {
 		watcher:           watcher,
 		hub:               hub,
 		gitignorePatterns: []string{".git"},
+		debounce:          200 * time.Millisecond,
+		reloadTimers:      make(map[string]*time.Timer),
 	}
 
 	return w, nil
@@ -130,10 +137,11 @@ func (w *Watcher) Start() {
 					}
 				}
 
-				// Handle all file operations except Remove and Chmod
+				// Handle all file operations except Remove and Chmod.
+				// Debounce: coalesce bursts of events for the same file so we
+				// only broadcast a single reload per burst.
 				if event.Op&fsnotify.Remove == 0 && event.Op&fsnotify.Chmod == 0 {
-					log.Println("File changed:", event.Name)
-					w.hub.Broadcast("reload")
+					w.scheduleReload(event.Name)
 				}
 			case err, ok := <-w.watcher.Errors:
 				if !ok {
@@ -145,6 +153,29 @@ func (w *Watcher) Start() {
 	}()
 }
 
+// scheduleReload coalesces bursts of file-change events for the same
+// path into a single broadcast after the debounce window elapses.
+func (w *Watcher) scheduleReload(path string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if t, ok := w.reloadTimers[path]; ok {
+		t.Stop()
+	}
+	w.reloadTimers[path] = time.AfterFunc(w.debounce, func() {
+		log.Println("File changed:", path)
+		w.hub.Broadcast("reload")
+		w.mu.Lock()
+		delete(w.reloadTimers, path)
+		w.mu.Unlock()
+	})
+}
+
 func (w *Watcher) Close() error {
+	w.mu.Lock()
+	for _, t := range w.reloadTimers {
+		t.Stop()
+	}
+	w.reloadTimers = nil
+	w.mu.Unlock()
 	return w.watcher.Close()
 }
