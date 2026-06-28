@@ -79,12 +79,11 @@ func liveReload(next http.Handler) http.Handler {
 			return
 		}
 
-		// Skip non-HTML files (CSS, JS, images, etc.).
-		if !strings.HasSuffix(r.URL.Path, ".html") && r.URL.Path != "/" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
+		// Wrap every other GET response and let injectWriter decide whether
+		// to inject based on the response's Content-Type. Deciding by path
+		// suffix is unreliable: a subfolder index served at "/sub/" has no
+		// ".html" suffix, and some HTML files use ".htm" or no extension at
+		// all. injectWriter streams non-HTML responses through untouched.
 		iw := &injectWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(iw, r)
 		iw.close()
