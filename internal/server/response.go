@@ -24,8 +24,9 @@ func (w *ResponseRecorder) Write(b []byte) (int, error) {
 }
 
 func (w *ResponseRecorder) WriteHeader(statusCode int) {
-	w.statusCode = statusCode
-	w.ResponseWriter.WriteHeader(statusCode)
+	if w.statusCode != statusCode {
+		w.statusCode = statusCode
+	}
 }
 
 func NewResponseRecorder(w http.ResponseWriter) *ResponseRecorder {
@@ -38,7 +39,7 @@ func NewResponseRecorder(w http.ResponseWriter) *ResponseRecorder {
 }
 
 func WriteResponse(w http.ResponseWriter, recorder *ResponseRecorder, body []byte) {
-	// Copy original headers
+	// Copy original headers first
 	for k, v := range recorder.Header() {
 		w.Header()[k] = v
 	}
@@ -49,10 +50,13 @@ func WriteResponse(w http.ResponseWriter, recorder *ResponseRecorder, body []byt
 		w.Header().Set("Content-Type", contentType)
 	}
 
-	// Update content length
+	// Update content length to match the (possibly rewritten) body
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
 
-	// Write the body (status code was already written by the recorder)
+	// Write the status header, then the body. The recorder no longer
+	// forwards WriteHeader to the underlying writer, so we must do it
+	// here to avoid the implicit 200 and lost headers.
+	w.WriteHeader(recorder.statusCode)
 	if _, err := w.Write(body); err != nil {
 		log.Printf("Error writing response: %v", err)
 	}
