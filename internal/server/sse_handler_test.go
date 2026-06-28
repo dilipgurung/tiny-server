@@ -13,7 +13,7 @@ import (
 // TestSSEHandlerRejectsNonGet verifies the SSE endpoint only accepts GET.
 func TestSSEHandlerRejectsNonGet(t *testing.T) {
 	hub := NewSSEHub()
-	handler := SSEHandler(hub)
+	handler := SSEHandler(hub, context.Background())
 
 	req := httptest.NewRequest(http.MethodPost, "/.live-reload", nil)
 	rr := httptest.NewRecorder()
@@ -28,7 +28,7 @@ func TestSSEHandlerRejectsNonGet(t *testing.T) {
 // delivered to a connected SSE client as a "data: ..." frame.
 func TestSSEHandlerStreamsBroadcast(t *testing.T) {
 	hub := NewSSEHub()
-	handler := SSEHandler(hub)
+	handler := SSEHandler(hub, context.Background())
 
 	ts := httptest.NewServer(handler)
 	defer ts.Close()
@@ -74,7 +74,7 @@ func TestSSEHandlerStreamsBroadcast(t *testing.T) {
 // TestSSEHandlerSetsHeaders verifies the SSE response headers.
 func TestSSEHandlerSetsHeaders(t *testing.T) {
 	hub := NewSSEHub()
-	handler := SSEHandler(hub)
+	handler := SSEHandler(hub, context.Background())
 
 	ts := httptest.NewServer(handler)
 	defer ts.Close()
