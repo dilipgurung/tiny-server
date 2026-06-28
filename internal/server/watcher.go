@@ -27,8 +27,14 @@ func NewWatcher(hub *SSEHub) (*Watcher, error) {
 		gitignorePatterns: []string{".git"},
 	}
 
-	// Read .gitignore patterns
-	if data, err := os.ReadFile(".gitignore"); err == nil {
+	return w, nil
+}
+
+// loadGitignore reads .gitignore patterns from the served directory (root)
+// rather than the process working directory. Only simple basename patterns
+// are supported: no paths, no negation, no **. See README for details.
+func (w *Watcher) loadGitignore(root string) {
+	if data, err := os.ReadFile(filepath.Join(root, ".gitignore")); err == nil {
 		for _, line := range strings.Split(string(data), "\n") {
 			line = strings.TrimSpace(line)
 			if line != "" && !strings.HasPrefix(line, "#") {
@@ -36,11 +42,10 @@ func NewWatcher(hub *SSEHub) (*Watcher, error) {
 			}
 		}
 	}
-
-	return w, nil
 }
 
 func (w *Watcher) WatchDirectory(root string) error {
+	w.loadGitignore(root)
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
