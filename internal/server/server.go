@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"sync"
+
+	"github.com/dilipgurung/tiny-server/internal/watcher"
 )
 
 type SSEHub struct {
@@ -94,7 +96,7 @@ func SSEHandler(hub *SSEHub, shutdownCtx context.Context) http.HandlerFunc {
 
 type Server struct {
 	httpServer *http.Server
-	watcher    *Watcher
+	watcher    *watcher.Watcher
 	cancel     context.CancelFunc
 }
 
@@ -115,24 +117,24 @@ func NewServer(port, dir string) (*Server, error) {
 
 	mux.HandleFunc("/.live-reload", SSEHandler(hub, shutdownCtx))
 
-	watcher, err := NewWatcher(hub)
+	w, err := watcher.NewWatcher(hub)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("error creating watcher: %w", err)
 	}
 
-	if err := watcher.WatchDirectory(absPath); err != nil {
+	if err := w.WatchDirectory(absPath); err != nil {
 		cancel()
 		return nil, fmt.Errorf("error watching directory: %w", err)
 	}
-	watcher.Start()
+	w.Start()
 
 	return &Server{
 		httpServer: &http.Server{
 			Addr:    ":" + port,
 			Handler: mux,
 		},
-		watcher: watcher,
+		watcher: w,
 		cancel:  cancel,
 	}, nil
 }

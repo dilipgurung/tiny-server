@@ -1,4 +1,4 @@
-package server
+package watcher
 
 import (
 	"context"
@@ -12,8 +12,8 @@ func TestWatcherStartCtxStopsOnCancel(t *testing.T) {
 	dir := mkdirFiles(t, map[string]string{
 		"index.html": "hello",
 	})
-	hub := NewSSEHub()
-	watcher, err := NewWatcher(hub)
+	b := &chanBroadcaster{ch: make(chan string, 1)}
+	watcher, err := NewWatcher(b)
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
 	}

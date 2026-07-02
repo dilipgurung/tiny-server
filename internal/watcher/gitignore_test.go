@@ -1,4 +1,4 @@
-package server
+package watcher
 
 import (
 	"path/filepath"
@@ -14,8 +14,8 @@ func TestWatcherReadsGitignoreFromServedDir(t *testing.T) {
 		"index.html":   "hello",
 		"sub/note.txt": "note",
 	})
-	hub := NewSSEHub()
-	watcher, err := NewWatcher(hub)
+	b := &chanBroadcaster{ch: make(chan string, 1)}
+	watcher, err := NewWatcher(b)
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
 	}
@@ -49,8 +49,8 @@ func TestWatcherIgnoresGitignoredFiles(t *testing.T) {
 		"index.html":   "hello",
 		"sub/note.txt": "note",
 	})
-	hub := NewSSEHub()
-	watcher, err := NewWatcher(hub)
+	b := &chanBroadcaster{ch: make(chan string, 1)}
+	watcher, err := NewWatcher(b)
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
 	}

@@ -1,4 +1,4 @@
-package server
+package watcher
 
 import (
 	"context"
@@ -12,16 +12,22 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// Broadcaster is the dependency the watcher needs to signal file changes.
+// It is satisfied by the live-reload SSE hub; tests can substitute a fake.
+type Broadcaster interface {
+	Broadcast(message string)
+}
+
 type Watcher struct {
 	watcher           *fsnotify.Watcher
-	hub               *SSEHub
+	broadcaster       Broadcaster
 	gitignorePatterns []string
 	debounce          time.Duration
 	mu                sync.Mutex
 	reloadTimers      map[string]*time.Timer
 }
 
-func NewWatcher(hub *SSEHub) (*Watcher, error) {
+func NewWatcher(b Broadcaster) (*Watcher, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -29,7 +35,7 @@ func NewWatcher(hub *SSEHub) (*Watcher, error) {
 
 	w := &Watcher{
 		watcher:           watcher,
-		hub:               hub,
+		broadcaster:       b,
 		gitignorePatterns: []string{".git"},
 		debounce:          200 * time.Millisecond,
 		reloadTimers:      make(map[string]*time.Timer),
@@ -172,7 +178,7 @@ func (w *Watcher) scheduleReload(path string) {
 	}
 	w.reloadTimers[path] = time.AfterFunc(w.debounce, func() {
 		log.Println("File changed:", path)
-		w.hub.Broadcast("reload")
+		w.broadcaster.Broadcast("reload")
 		w.mu.Lock()
 		delete(w.reloadTimers, path)
 		w.mu.Unlock()

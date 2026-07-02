@@ -1,4 +1,4 @@
-package server
+package watcher
 
 import (
 	"os"
@@ -33,8 +33,8 @@ func setupWatcherTempDir(t *testing.T) string {
 func TestWatcherDebounceCoalescesBursts(t *testing.T) {
 	dir := setupWatcherTempDir(t)
 
-	hub := NewSSEHub()
-	watcher, err := NewWatcher(hub)
+	ch := make(chan string, 16)
+	watcher, err := NewWatcher(&chanBroadcaster{ch: ch})
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
 	}
@@ -46,10 +46,6 @@ func TestWatcherDebounceCoalescesBursts(t *testing.T) {
 		t.Fatalf("WatchDirectory: %v", err)
 	}
 	watcher.Start()
-
-	ch := make(chan string, 16)
-	hub.addClient(ch)
-	defer hub.removeClient(ch)
 
 	// Write a burst of changes to index.html.
 	target := filepath.Join(dir, "index.html")
@@ -83,8 +79,8 @@ loop:
 func TestWatcherDebounceSeparatesDistinctFiles(t *testing.T) {
 	dir := setupWatcherTempDir(t)
 
-	hub := NewSSEHub()
-	watcher, err := NewWatcher(hub)
+	ch := make(chan string, 16)
+	watcher, err := NewWatcher(&chanBroadcaster{ch: ch})
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
 	}
@@ -95,10 +91,6 @@ func TestWatcherDebounceSeparatesDistinctFiles(t *testing.T) {
 		t.Fatalf("WatchDirectory: %v", err)
 	}
 	watcher.Start()
-
-	ch := make(chan string, 16)
-	hub.addClient(ch)
-	defer hub.removeClient(ch)
 
 	if err := appendFile(filepath.Join(dir, "index.html"), "a\n"); err != nil {
 		t.Fatalf("write: %v", err)
