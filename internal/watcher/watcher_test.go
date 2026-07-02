@@ -1,10 +1,10 @@
-package server
+package watcher
 
 import "testing"
 
 func TestNewWatcher(t *testing.T) {
-	hub := NewSSEHub()
-	watcher, err := NewWatcher(hub)
+	b := &chanBroadcaster{ch: make(chan string, 1)}
+	watcher, err := NewWatcher(b)
 	if err != nil {
 		t.Fatalf("Failed to create watcher: %v", err)
 	}

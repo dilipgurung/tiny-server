@@ -28,7 +28,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		versionInfo := server.NewVersionInfo(tinyServerVersion, goVersion)
+		versionInfo := NewVersionInfo(tinyServerVersion, goVersion)
 		versionInfo.PrintSplash()
 		return
 	}

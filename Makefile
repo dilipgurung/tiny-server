@@ -11,14 +11,20 @@ all: deps test dev
 	@echo "All tasks completed."
 	@echo "You can run the program with 'make dev' or test it with 'make test'."
 
+# install-golangci-lint installs the pinned golangci-lint version only if it
+# is missing or the installed version differs. It uses `go install` so the
+# binary is built with the local Go toolchain; the prebuilt download script
+# ships a binary built with an older Go that panics type-checking files
+# requiring a newer toolchain.
 .PHONY: install-golangci-lint
 install-golangci-lint:
-	@echo "Installing golangci-lint..."
-ifeq (, $(shell which golangci-lint))
-	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOPATH)/bin $(GOLANGCI_LINT_VERSION)
-else
-	@echo "golangci-lint is already installed at $(shell which golangci-lint)"
-endif
+	@want=$$(echo "$(GOLANGCI_LINT_VERSION)" | sed 's/^v//'); \
+	if command -v golangci-lint >/dev/null 2>&1 && golangci-lint --version 2>/dev/null | grep -q "$$want"; then \
+		echo "golangci-lint $$want already installed at $$(which golangci-lint)"; \
+	else \
+		echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION) via go install..."; \
+		go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION); \
+	fi
 
 .PHONY: lint
 lint: install-golangci-lint
