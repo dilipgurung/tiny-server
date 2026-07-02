@@ -3,13 +3,9 @@ package server
 import (
 	"context"
 	"fmt"
-	"log"
-	"net"
 	"net/http"
 	"path/filepath"
 	"sync"
-
-	"github.com/skip2/go-qrcode"
 )
 
 type SSEHub struct {
@@ -96,55 +92,6 @@ func SSEHandler(hub *SSEHub, shutdownCtx context.Context) http.HandlerFunc {
 	}
 }
 
-// formatAddress renders a listen address for an IP, bracketing IPv6 literals.
-func formatAddress(ip net.IP, port string) string {
-	if v4 := ip.To4(); v4 != nil {
-		return fmt.Sprintf("http://%s:%s", v4.String(), port)
-	}
-	return fmt.Sprintf("http://[%s]:%s", ip.To16().String(), port)
-}
-
-func GetNetworkAddresses(port string) (string, []string, error) {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return "", nil, err
-	}
-
-	var host string
-	var addresses []string
-
-	for _, iface := range interfaces {
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			if ip == nil || ip.IsUnspecified() {
-				continue
-			}
-
-			formatted := formatAddress(ip, port)
-			addresses = append(addresses, formatted)
-			if !ip.IsLoopback() && host == "" {
-				host = formatted
-			}
-		}
-	}
-
-	if host == "" && len(addresses) > 0 {
-		host = addresses[0]
-	}
-
-	return host, addresses, nil
-}
-
 type Server struct {
 	httpServer *http.Server
 	watcher    *Watcher
@@ -204,34 +151,4 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }
 
-func (s *Server) PrintInfo(port, dir string) {
-	host, addresses, err := GetNetworkAddresses(port)
-	if err != nil {
-		log.Printf("Error getting network addresses: %v", err)
-		return
-	}
 
-	qr, err := qrcode.New(host, qrcode.Medium)
-	if err != nil {
-		log.Printf("Error generating QR code: %v", err)
-	} else {
-		for _, row := range qr.Bitmap() {
-			for _, cell := range row {
-				if cell {
-					fmt.Print("██")
-				} else {
-					fmt.Print("  ")
-				}
-			}
-			fmt.Println()
-		}
-	}
-
-	fmt.Printf("Starting tiny-server ...\n")
-	fmt.Printf("Serving %s through http\n", dir)
-	fmt.Printf("Available on:\n")
-	for _, addr := range addresses {
-		fmt.Printf("  %s\n", addr)
-	}
-	fmt.Println("Press CTRL+C to stop the server.")
-}
