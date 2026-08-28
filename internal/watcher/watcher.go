@@ -153,10 +153,14 @@ func (w *Watcher) StartCtx(ctx context.Context) {
 					}
 				}
 
-				// Handle all file operations except Remove and Chmod.
-				// Debounce: coalesce bursts of events for the same file so we
-				// only broadcast a single reload per burst.
-				if event.Op&fsnotify.Remove == 0 && event.Op&fsnotify.Chmod == 0 {
+				// Reload for anything that changes what a browser would see:
+				// creates, writes, removes and renames. Deleting or renaming
+				// a file changes directory listings, links and imports just
+				// as much as editing one does, so excluding Remove left the
+				// page stale after every delete. Chmod is excluded because
+				// permissions do not affect what is served.
+				const reloadOps = fsnotify.Create | fsnotify.Write | fsnotify.Remove | fsnotify.Rename
+				if event.Op&reloadOps != 0 {
 					w.scheduleReload(event.Name)
 				}
 			case err, ok := <-w.watcher.Errors:
