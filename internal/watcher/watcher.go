@@ -71,6 +71,14 @@ func (w *Watcher) loadGitignore(root string) {
 
 func (w *Watcher) WatchDirectory(root string) error {
 	w.loadGitignore(root)
+	return w.watchTree(root)
+}
+
+// watchTree adds root and every eligible directory beneath it to the watch
+// list. The ignore rules apply to what is found inside root, not to root
+// itself, so it is usable both for the served directory and for a subtree
+// that appears later.
+func (w *Watcher) watchTree(root string) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -81,10 +89,11 @@ func (w *Watcher) WatchDirectory(root string) error {
 			return nil
 		}
 
-		// The served root is always watched. The ignore rules below apply to
-		// what is found *inside* it: applying them to the root itself made
-		// "tiny-server -d ~/.local/site", or serving a directory named
-		// "dist", walk nothing and start with live reload silently dead.
+		// The tree's own root is always watched. The ignore rules below
+		// apply to what is found *inside* it: applying them to the root
+		// itself made "tiny-server -d ~/.local/site", or serving a directory
+		// named "dist", walk nothing and start with live reload silently
+		// dead.
 		if path != root {
 			if w.ignored(filepath.Base(path)) {
 				if info.IsDir() {
@@ -143,13 +152,18 @@ func (w *Watcher) StartCtx(ctx context.Context) {
 					continue
 				}
 
-				// Handle new directories
-				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-					if event.Op&fsnotify.Create != 0 {
-						if err := w.watcher.Add(event.Name); err != nil {
+				// A directory can arrive already populated -- a build output
+				// directory, or a tree moved or copied into the served root.
+				// fsnotify only reports the top of it, so walk the subtree
+				// and watch every directory inside; adding just event.Name
+				// left nested files unwatched indefinitely. Fall through
+				// afterwards so the new content also triggers a reload,
+				// which the previous "continue" suppressed.
+				if event.Op&fsnotify.Create != 0 {
+					if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+						if err := w.watchTree(event.Name); err != nil {
 							log.Printf("Failed to watch new directory %q: %v", event.Name, err)
 						}
-						continue
 					}
 				}
 
