@@ -107,9 +107,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return status
 }
 
+// getServeDir picks the directory to serve: an explicit -d, else ./public
+// when it exists, else the working directory. The IsDir check matters
+// because a regular file named "public" would otherwise be chosen and then
+// rejected at startup, leaving the command unusable in that directory.
 func getServeDir(dir string) string {
 	if dir == "" {
-		if _, err := os.Stat("./public"); err == nil {
+		if info, err := os.Stat("./public"); err == nil && info.IsDir() {
 			return "./public"
 		}
 		return "."

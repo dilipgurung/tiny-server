@@ -47,3 +47,24 @@ func TestGetServeDirExplicit(t *testing.T) {
 		t.Errorf("getServeDir explicit = %q, want %q", got, "/tmp/some-dir")
 	}
 }
+
+// TestGetServeDirIgnoresNonDirectoryPublic verifies a regular file named
+// "public" is not mistaken for the default serving directory.
+func TestGetServeDirIgnoresNonDirectoryPublic(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "public"), []byte("not a dir"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+
+	if got := getServeDir(""); got != "." {
+		t.Errorf("getServeDir(\"\") with a file named public = %q, want %q", got, ".")
+	}
+}
