@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/dilipgurung/tiny-server/internal/livereload"
 	"github.com/dilipgurung/tiny-server/internal/watcher"
@@ -62,6 +63,19 @@ func NewServer(port, dir string) (*Server, error) {
 		httpServer: &http.Server{
 			Addr:    ":" + port,
 			Handler: mux,
+			// Bound how long a client may hold a connection while sending.
+			// The server listens on every interface, so without these a
+			// single peer can pin sockets and goroutines indefinitely by
+			// dribbling out a request. This only serves GET/HEAD, so the
+			// whole request should arrive well inside ReadTimeout.
+			//
+			// WriteTimeout is deliberately left unset: live-reload responses
+			// are long-lived SSE streams and a write deadline would cut them
+			// off. The read deadlines above do not affect them -- they still
+			// stream, and client disconnects are still detected.
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       15 * time.Second,
+			IdleTimeout:       60 * time.Second,
 		},
 		watcher: w,
 		root:    root,
