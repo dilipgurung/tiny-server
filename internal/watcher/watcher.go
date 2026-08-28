@@ -24,6 +24,7 @@ type Watcher struct {
 	gitignorePatterns []string
 	debounce          time.Duration
 	mu                sync.Mutex
+	closed            bool
 	reloadTimers      map[string]*time.Timer
 }
 
@@ -173,6 +174,12 @@ func (w *Watcher) StartCtx(ctx context.Context) {
 func (w *Watcher) scheduleReload(path string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	// The event loop can still be handling an event that was dequeued
+	// before Close ran. Without this guard it would write to the nil map
+	// Close leaves behind and panic during shutdown.
+	if w.closed {
+		return
+	}
 	if t, ok := w.reloadTimers[path]; ok {
 		t.Stop()
 	}
@@ -187,6 +194,7 @@ func (w *Watcher) scheduleReload(path string) {
 
 func (w *Watcher) Close() error {
 	w.mu.Lock()
+	w.closed = true
 	for _, t := range w.reloadTimers {
 		t.Stop()
 	}
