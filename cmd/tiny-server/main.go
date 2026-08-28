@@ -47,7 +47,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			printUsage(stdout, fs)
 			return exitOK
 		}
-		fmt.Fprintf(stderr, "%v\n\n", err)
+		_, _ = fmt.Fprintf(stderr, "%v\n\n", err)
 		printUsage(stderr, fs)
 		return exitUsage
 	}
@@ -60,14 +60,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	serveDir := getServeDir(*dir)
 	srv, err := server.NewServer(*port, serveDir)
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
+		_, _ = fmt.Fprintf(stderr, "%v\n", err)
 		return exitFail
 	}
 
 	// Bind before printing the banner so an unusable port fails loudly
 	// instead of scrolling past a QR code for an address nothing is on.
 	if err := srv.Listen(); err != nil {
-		fmt.Fprintf(stderr, "cannot listen on port %q: %v\n", *port, err)
+		_, _ = fmt.Fprintf(stderr, "cannot listen on port %q: %v\n", *port, err)
 		return exitFail
 	}
 
@@ -89,18 +89,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case <-done:
 	case err := <-errCh:
 		if err != nil {
-			fmt.Fprintf(stderr, "%v\n", err)
+			_, _ = fmt.Fprintf(stderr, "%v\n", err)
 			status = exitFail
 		}
 	}
-	fmt.Fprintln(stdout)
+	_, _ = fmt.Fprintln(stdout)
 	log.Println("Shutting down server...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		fmt.Fprintf(stderr, "forced shutdown: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "forced shutdown: %v\n", err)
 		return exitFail
 	}
 	log.Println("Server stopped")
@@ -122,11 +122,11 @@ func getServeDir(dir string) string {
 }
 
 func printUsage(w io.Writer, fs *flag.FlagSet) {
-	fmt.Fprintf(w, "Usage: %s [options]\n", os.Args[0])
-	fmt.Fprintln(w, "Options:")
+	_, _ = fmt.Fprintf(w, "Usage: %s [options]\n", os.Args[0])
+	_, _ = fmt.Fprintln(w, "Options:")
 	fs.SetOutput(w)
 	fs.PrintDefaults()
 	fs.SetOutput(io.Discard)
-	fmt.Fprintln(w, "\nExample:")
-	fmt.Fprintf(w, "  %s -p 8000 -d ./public\n", os.Args[0])
+	_, _ = fmt.Fprintln(w, "\nExample:")
+	_, _ = fmt.Fprintf(w, "  %s -p 8000 -d ./public\n", os.Args[0])
 }
