@@ -49,13 +49,24 @@ func NewWatcher(b Broadcaster) (*Watcher, error) {
 // rather than the process working directory. Only simple basename patterns
 // are supported: no paths, no negation, no **. See README for details.
 func (w *Watcher) loadGitignore(root string) {
-	if data, err := os.ReadFile(filepath.Join(root, ".gitignore")); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" && !strings.HasPrefix(line, "#") {
-				w.gitignorePatterns = append(w.gitignorePatterns, line)
-			}
+	data, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		pattern := strings.TrimSpace(line)
+		if pattern == "" || strings.HasPrefix(pattern, "#") {
+			continue
 		}
+		// Patterns are matched against a path's basename, so surrounding
+		// slashes must go: filepath.Match("dist/", "dist") is false, which
+		// silently disabled the most common .gitignore entries there are
+		// ("dist/", "node_modules/", "/vendor").
+		pattern = strings.Trim(pattern, "/")
+		if pattern == "" {
+			continue
+		}
+		w.gitignorePatterns = append(w.gitignorePatterns, pattern)
 	}
 }
 
