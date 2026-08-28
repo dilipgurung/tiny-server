@@ -1,6 +1,7 @@
 package watcher
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -74,9 +75,11 @@ loop:
 	}
 }
 
-// TestWatcherDebounceSeparatesDistinctFiles verifies that changes to two
-// different files each produce their own reload.
-func TestWatcherDebounceSeparatesDistinctFiles(t *testing.T) {
+// TestWatcherDebounceSeparatesChangesOverTime verifies that changes spaced
+// further apart than the debounce window still produce their own reload.
+// The debounce is watcher-wide, so this is about separation in time, not
+// about which file changed.
+func TestWatcherDebounceSeparatesChangesOverTime(t *testing.T) {
 	dir := setupWatcherTempDir(t)
 
 	ch := make(chan string, 16)
@@ -114,7 +117,54 @@ loop:
 	}
 
 	if reloads != 2 {
-		t.Errorf("expected 2 debounced reloads (one per file), got %d", reloads)
+		t.Errorf("expected 2 debounced reloads (one per debounce window), got %d", reloads)
+	}
+}
+
+// TestWatcherDebounceCoalescesMultiFileBurst verifies that a burst touching
+// many different files produces a single reload. Every event broadcasts the
+// same global "reload", so the per-path timers this replaced fired one
+// redundant reload per file -- a build or checkout could flood the browser
+// with reload messages and cause reconnect churn.
+func TestWatcherDebounceCoalescesMultiFileBurst(t *testing.T) {
+	dir := setupWatcherTempDir(t)
+
+	ch := make(chan string, 256)
+	watcher, err := NewWatcher(&chanBroadcaster{ch: ch})
+	if err != nil {
+		t.Fatalf("NewWatcher: %v", err)
+	}
+	defer func() { _ = watcher.Close() }()
+	watcher.debounce = 50 * time.Millisecond
+
+	if err := watcher.WatchDirectory(dir); err != nil {
+		t.Fatalf("WatchDirectory: %v", err)
+	}
+	watcher.Start()
+
+	// Write many distinct files well inside the debounce window, the way a
+	// build step or a git checkout would.
+	for i := 0; i < 25; i++ {
+		name := filepath.Join(dir, fmt.Sprintf("page%d.html", i))
+		if err := os.WriteFile(name, []byte("built\n"), 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	deadline := time.After(500 * time.Millisecond)
+	var reloads int
+loop:
+	for {
+		select {
+		case <-ch:
+			reloads++
+		case <-deadline:
+			break loop
+		}
+	}
+
+	if reloads != 1 {
+		t.Errorf("expected exactly 1 reload for a 25-file burst, got %d", reloads)
 	}
 }
 

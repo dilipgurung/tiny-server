@@ -2,6 +2,7 @@ package watcher
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -24,7 +25,8 @@ type Watcher struct {
 	gitignorePatterns []string
 	debounce          time.Duration
 	mu                sync.Mutex
-	reloadTimers      map[string]*time.Timer
+	closed            bool
+	reloadTimer       *time.Timer
 }
 
 func NewWatcher(b Broadcaster) (*Watcher, error) {
@@ -38,7 +40,6 @@ func NewWatcher(b Broadcaster) (*Watcher, error) {
 		broadcaster:       b,
 		gitignorePatterns: []string{".git"},
 		debounce:          200 * time.Millisecond,
-		reloadTimers:      make(map[string]*time.Timer),
 	}
 
 	return w, nil
@@ -48,18 +49,37 @@ func NewWatcher(b Broadcaster) (*Watcher, error) {
 // rather than the process working directory. Only simple basename patterns
 // are supported: no paths, no negation, no **. See README for details.
 func (w *Watcher) loadGitignore(root string) {
-	if data, err := os.ReadFile(filepath.Join(root, ".gitignore")); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" && !strings.HasPrefix(line, "#") {
-				w.gitignorePatterns = append(w.gitignorePatterns, line)
-			}
+	data, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		pattern := strings.TrimSpace(line)
+		if pattern == "" || strings.HasPrefix(pattern, "#") {
+			continue
 		}
+		// Patterns are matched against a path's basename, so surrounding
+		// slashes must go: filepath.Match("dist/", "dist") is false, which
+		// silently disabled the most common .gitignore entries there are
+		// ("dist/", "node_modules/", "/vendor").
+		pattern = strings.Trim(pattern, "/")
+		if pattern == "" {
+			continue
+		}
+		w.gitignorePatterns = append(w.gitignorePatterns, pattern)
 	}
 }
 
 func (w *Watcher) WatchDirectory(root string) error {
 	w.loadGitignore(root)
+	return w.watchTree(root)
+}
+
+// watchTree adds root and every eligible directory beneath it to the watch
+// list. The ignore rules apply to what is found inside root, not to root
+// itself, so it is usable both for the served directory and for a subtree
+// that appears later.
+func (w *Watcher) watchTree(root string) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -70,23 +90,13 @@ func (w *Watcher) WatchDirectory(root string) error {
 			return nil
 		}
 
-		// Skip directories starting with ~ or .
-		base := filepath.Base(path)
-		if strings.HasPrefix(base, "~") || (base != "." && strings.HasPrefix(base, ".")) {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip .git and gitignore patterns
-		for _, pattern := range w.gitignorePatterns {
-			matched, err := filepath.Match(pattern, base)
-			if err != nil {
-				log.Printf("Invalid gitignore pattern %q: %v", pattern, err)
-				continue
-			}
-			if matched {
+		// The tree's own root is always watched. The ignore rules below
+		// apply to what is found *inside* it: applying them to the root
+		// itself made "tiny-server -d ~/.local/site", or serving a directory
+		// named "dist", walk nothing and start with live reload silently
+		// dead.
+		if path != root {
+			if w.ignored(filepath.Base(path)) {
 				if info.IsDir() {
 					return filepath.SkipDir
 				}
@@ -96,11 +106,38 @@ func (w *Watcher) WatchDirectory(root string) error {
 
 		if info.IsDir() {
 			if err := w.watcher.Add(path); err != nil {
-				log.Printf("Failed to watch %q: %v", path, err)
+				// Failing on the tree's own root means nothing underneath
+				// it will ever be seen, so report it rather than starting a
+				// server whose live reload is silently dead. A nested
+				// directory failing (watch limits, permissions) only costs
+				// coverage of that subtree, so warn and keep going.
+				if path == root {
+					return fmt.Errorf("cannot watch %q: %w", path, err)
+				}
+				log.Printf("Live reload disabled for %q: %v", path, err)
 			}
 		}
 		return nil
 	})
+}
+
+// ignored reports whether a path's basename should be excluded from
+// watching: hidden and editor-backup names, or a .gitignore pattern.
+func (w *Watcher) ignored(base string) bool {
+	if strings.HasPrefix(base, "~") || strings.HasPrefix(base, ".") {
+		return true
+	}
+	for _, pattern := range w.gitignorePatterns {
+		matched, err := filepath.Match(pattern, base)
+		if err != nil {
+			log.Printf("Invalid gitignore pattern %q: %v", pattern, err)
+			continue
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *Watcher) Start() {
@@ -119,43 +156,34 @@ func (w *Watcher) StartCtx(ctx context.Context) {
 				if !ok {
 					return
 				}
-				// Skip directories starting with ~ or .
-				base := filepath.Base(event.Name)
-				if strings.HasPrefix(base, "~") || strings.HasPrefix(base, ".") {
+				// Skip hidden, editor-backup and gitignored names.
+				if w.ignored(filepath.Base(event.Name)) {
 					continue
 				}
 
-				// Check if file matches gitignore patterns
-				skip := false
-				for _, pattern := range w.gitignorePatterns {
-					matched, err := filepath.Match(pattern, base)
-					if err != nil {
-						log.Printf("Invalid gitignore pattern %q: %v", pattern, err)
-						continue
-					}
-					if matched {
-						skip = true
-						break
-					}
-				}
-				if skip {
-					continue
-				}
-
-				// Handle new directories
-				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-					if event.Op&fsnotify.Create != 0 {
-						if err := w.watcher.Add(event.Name); err != nil {
+				// A directory can arrive already populated -- a build output
+				// directory, or a tree moved or copied into the served root.
+				// fsnotify only reports the top of it, so walk the subtree
+				// and watch every directory inside; adding just event.Name
+				// left nested files unwatched indefinitely. Fall through
+				// afterwards so the new content also triggers a reload,
+				// which the previous "continue" suppressed.
+				if event.Op&fsnotify.Create != 0 {
+					if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+						if err := w.watchTree(event.Name); err != nil {
 							log.Printf("Failed to watch new directory %q: %v", event.Name, err)
 						}
-						continue
 					}
 				}
 
-				// Handle all file operations except Remove and Chmod.
-				// Debounce: coalesce bursts of events for the same file so we
-				// only broadcast a single reload per burst.
-				if event.Op&fsnotify.Remove == 0 && event.Op&fsnotify.Chmod == 0 {
+				// Reload for anything that changes what a browser would see:
+				// creates, writes, removes and renames. Deleting or renaming
+				// a file changes directory listings, links and imports just
+				// as much as editing one does, so excluding Remove left the
+				// page stale after every delete. Chmod is excluded because
+				// permissions do not affect what is served.
+				const reloadOps = fsnotify.Create | fsnotify.Write | fsnotify.Remove | fsnotify.Rename
+				if event.Op&reloadOps != 0 {
 					w.scheduleReload(event.Name)
 				}
 			case err, ok := <-w.watcher.Errors:
@@ -168,29 +196,38 @@ func (w *Watcher) StartCtx(ctx context.Context) {
 	}()
 }
 
-// scheduleReload coalesces bursts of file-change events for the same
-// path into a single broadcast after the debounce window elapses.
+// scheduleReload coalesces a burst of file-change events into a single
+// broadcast after the debounce window elapses.
+//
+// The timer is watcher-wide rather than one per path. Every event produces
+// the same global "reload" message, so a build or checkout touching
+// hundreds of files should reload the page once; per-path timers allocated
+// one timer per file and fired one redundant reload per file, causing
+// reconnect churn in the browser.
 func (w *Watcher) scheduleReload(path string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if t, ok := w.reloadTimers[path]; ok {
-		t.Stop()
+	// The event loop can still be handling an event that was dequeued
+	// before Close ran; don't broadcast after shutdown has begun.
+	if w.closed {
+		return
 	}
-	w.reloadTimers[path] = time.AfterFunc(w.debounce, func() {
+	if w.reloadTimer != nil {
+		w.reloadTimer.Stop()
+	}
+	w.reloadTimer = time.AfterFunc(w.debounce, func() {
 		log.Println("File changed:", path)
 		w.broadcaster.Broadcast("reload")
-		w.mu.Lock()
-		delete(w.reloadTimers, path)
-		w.mu.Unlock()
 	})
 }
 
 func (w *Watcher) Close() error {
 	w.mu.Lock()
-	for _, t := range w.reloadTimers {
-		t.Stop()
+	w.closed = true
+	if w.reloadTimer != nil {
+		w.reloadTimer.Stop()
+		w.reloadTimer = nil
 	}
-	w.reloadTimers = nil
 	w.mu.Unlock()
 	return w.watcher.Close()
 }
