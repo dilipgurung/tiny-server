@@ -82,23 +82,12 @@ func (w *Watcher) WatchDirectory(root string) error {
 			return nil
 		}
 
-		// Skip directories starting with ~ or .
-		base := filepath.Base(path)
-		if strings.HasPrefix(base, "~") || (base != "." && strings.HasPrefix(base, ".")) {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip .git and gitignore patterns
-		for _, pattern := range w.gitignorePatterns {
-			matched, err := filepath.Match(pattern, base)
-			if err != nil {
-				log.Printf("Invalid gitignore pattern %q: %v", pattern, err)
-				continue
-			}
-			if matched {
+		// The served root is always watched. The ignore rules below apply to
+		// what is found *inside* it: applying them to the root itself made
+		// "tiny-server -d ~/.local/site", or serving a directory named
+		// "dist", walk nothing and start with live reload silently dead.
+		if path != root {
+			if w.ignored(filepath.Base(path)) {
 				if info.IsDir() {
 					return filepath.SkipDir
 				}
@@ -113,6 +102,25 @@ func (w *Watcher) WatchDirectory(root string) error {
 		}
 		return nil
 	})
+}
+
+// ignored reports whether a path's basename should be excluded from
+// watching: hidden and editor-backup names, or a .gitignore pattern.
+func (w *Watcher) ignored(base string) bool {
+	if strings.HasPrefix(base, "~") || strings.HasPrefix(base, ".") {
+		return true
+	}
+	for _, pattern := range w.gitignorePatterns {
+		matched, err := filepath.Match(pattern, base)
+		if err != nil {
+			log.Printf("Invalid gitignore pattern %q: %v", pattern, err)
+			continue
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *Watcher) Start() {
@@ -131,26 +139,8 @@ func (w *Watcher) StartCtx(ctx context.Context) {
 				if !ok {
 					return
 				}
-				// Skip directories starting with ~ or .
-				base := filepath.Base(event.Name)
-				if strings.HasPrefix(base, "~") || strings.HasPrefix(base, ".") {
-					continue
-				}
-
-				// Check if file matches gitignore patterns
-				skip := false
-				for _, pattern := range w.gitignorePatterns {
-					matched, err := filepath.Match(pattern, base)
-					if err != nil {
-						log.Printf("Invalid gitignore pattern %q: %v", pattern, err)
-						continue
-					}
-					if matched {
-						skip = true
-						break
-					}
-				}
-				if skip {
+				// Skip hidden, editor-backup and gitignored names.
+				if w.ignored(filepath.Base(event.Name)) {
 					continue
 				}
 
