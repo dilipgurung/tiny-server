@@ -25,7 +25,7 @@ type Watcher struct {
 	debounce          time.Duration
 	mu                sync.Mutex
 	closed            bool
-	reloadTimers      map[string]*time.Timer
+	reloadTimer       *time.Timer
 }
 
 func NewWatcher(b Broadcaster) (*Watcher, error) {
@@ -39,7 +39,6 @@ func NewWatcher(b Broadcaster) (*Watcher, error) {
 		broadcaster:       b,
 		gitignorePatterns: []string{".git"},
 		debounce:          200 * time.Millisecond,
-		reloadTimers:      make(map[string]*time.Timer),
 	}
 
 	return w, nil
@@ -170,36 +169,38 @@ func (w *Watcher) StartCtx(ctx context.Context) {
 	}()
 }
 
-// scheduleReload coalesces bursts of file-change events for the same
-// path into a single broadcast after the debounce window elapses.
+// scheduleReload coalesces a burst of file-change events into a single
+// broadcast after the debounce window elapses.
+//
+// The timer is watcher-wide rather than one per path. Every event produces
+// the same global "reload" message, so a build or checkout touching
+// hundreds of files should reload the page once; per-path timers allocated
+// one timer per file and fired one redundant reload per file, causing
+// reconnect churn in the browser.
 func (w *Watcher) scheduleReload(path string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	// The event loop can still be handling an event that was dequeued
-	// before Close ran. Without this guard it would write to the nil map
-	// Close leaves behind and panic during shutdown.
+	// before Close ran; don't broadcast after shutdown has begun.
 	if w.closed {
 		return
 	}
-	if t, ok := w.reloadTimers[path]; ok {
-		t.Stop()
+	if w.reloadTimer != nil {
+		w.reloadTimer.Stop()
 	}
-	w.reloadTimers[path] = time.AfterFunc(w.debounce, func() {
+	w.reloadTimer = time.AfterFunc(w.debounce, func() {
 		log.Println("File changed:", path)
 		w.broadcaster.Broadcast("reload")
-		w.mu.Lock()
-		delete(w.reloadTimers, path)
-		w.mu.Unlock()
 	})
 }
 
 func (w *Watcher) Close() error {
 	w.mu.Lock()
 	w.closed = true
-	for _, t := range w.reloadTimers {
-		t.Stop()
+	if w.reloadTimer != nil {
+		w.reloadTimer.Stop()
+		w.reloadTimer = nil
 	}
-	w.reloadTimers = nil
 	w.mu.Unlock()
 	return w.watcher.Close()
 }
