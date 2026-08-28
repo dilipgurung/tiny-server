@@ -56,6 +56,7 @@ func NewServer(port, dir string) (*Server, error) {
 
 	if err := w.WatchDirectory(absPath); err != nil {
 		cancel()
+		_ = w.Close()
 		_ = root.Close()
 		return nil, fmt.Errorf("error watching directory: %w", err)
 	}

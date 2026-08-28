@@ -2,6 +2,7 @@ package watcher
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -105,7 +106,15 @@ func (w *Watcher) watchTree(root string) error {
 
 		if info.IsDir() {
 			if err := w.watcher.Add(path); err != nil {
-				log.Printf("Failed to watch %q: %v", path, err)
+				// Failing on the tree's own root means nothing underneath
+				// it will ever be seen, so report it rather than starting a
+				// server whose live reload is silently dead. A nested
+				// directory failing (watch limits, permissions) only costs
+				// coverage of that subtree, so warn and keep going.
+				if path == root {
+					return fmt.Errorf("cannot watch %q: %w", path, err)
+				}
+				log.Printf("Live reload disabled for %q: %v", path, err)
 			}
 		}
 		return nil
