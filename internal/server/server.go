@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ type Server struct {
 	httpServer *http.Server
 	watcher    *watcher.Watcher
 	root       *os.Root
+	listener   net.Listener
 	cancel     context.CancelFunc
 }
 
@@ -83,8 +85,25 @@ func NewServer(port, dir string) (*Server, error) {
 	}, nil
 }
 
+// Listen binds the server's address. It is separate from Start so that a
+// bind failure -- an invalid port, or one already in use -- is reported
+// before the startup banner and QR code are printed.
+func (s *Server) Listen() error {
+	ln, err := net.Listen("tcp", s.httpServer.Addr)
+	if err != nil {
+		return err
+	}
+	s.listener = ln
+	return nil
+}
+
 func (s *Server) Start() error {
-	return s.httpServer.ListenAndServe()
+	if s.listener == nil {
+		if err := s.Listen(); err != nil {
+			return err
+		}
+	}
+	return s.httpServer.Serve(s.listener)
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
@@ -95,5 +114,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.cancel()
 	_ = s.watcher.Close()
 	_ = s.root.Close()
-	return s.httpServer.Shutdown(ctx)
+	err := s.httpServer.Shutdown(ctx)
+	// Shutdown closes listeners it is serving; close ours explicitly in case
+	// Start was never reached (a failure between Listen and Start).
+	if s.listener != nil {
+		_ = s.listener.Close()
+	}
+	return err
 }
