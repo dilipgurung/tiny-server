@@ -23,18 +23,13 @@ func blockDotfiles(next http.Handler) http.Handler {
 // isDotfilePath reports whether any segment of the cleaned path begins with
 // ".". The root path "/" is allowed.
 func isDotfilePath(path string) bool {
-	if path == "/" {
-		return false
+	// A segment starts with "." exactly when a "." is at the very start of
+	// the path or directly follows a "/". Scanning for that avoids splitting
+	// (and allocating) the path on every request.
+	if strings.HasPrefix(path, ".") {
+		return true
 	}
-	for _, seg := range strings.Split(path, "/") {
-		if seg == "" {
-			continue
-		}
-		if strings.HasPrefix(seg, ".") {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(path, "/.")
 }
 
 func logRequest(next http.Handler) http.Handler {
@@ -45,11 +40,14 @@ func logRequest(next http.Handler) http.Handler {
 		next.ServeHTTP(rec, r)
 		duration := time.Since(start)
 
+		// Log the escaped path: r.URL.Path is percent-decoded, so a request
+		// for "/%0Afake" would otherwise let any client on the network write
+		// forged lines into the log.
 		log.Printf("%-6s %3d %12s %-40s",
 			r.Method,
 			rec.StatusCode,
 			duration,
-			r.URL.Path,
+			r.URL.EscapedPath(),
 		)
 	})
 }
@@ -64,4 +62,9 @@ type StatusRecorder struct {
 func (rec *StatusRecorder) WriteHeader(code int) {
 	rec.StatusCode = code
 	rec.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap exposes the underlying ResponseWriter to http.ResponseController.
+func (rec *StatusRecorder) Unwrap() http.ResponseWriter {
+	return rec.ResponseWriter
 }

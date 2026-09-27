@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 )
 
 // containedFS wraps an *os.Root filesystem so paths the root refuses to
@@ -22,15 +23,45 @@ type containedFS struct {
 	fsys fs.FS
 }
 
-// Open delegates to the root filesystem, returning the underlying file
-// untouched so http.FileServerFS still sees its fs.ReadDirFile and
-// io.Seeker implementations (needed for directory listings and ranges).
+// Open delegates to the root filesystem. Regular files are returned
+// untouched so http.FileServerFS still sees their io.Seeker implementation
+// (needed for ranges); directories are wrapped so listings omit dotfiles.
 func (c containedFS) Open(name string) (fs.File, error) {
 	f, err := c.fsys.Open(name)
 	if err != nil {
 		return nil, notFound(err)
 	}
+	if d, ok := f.(fs.ReadDirFile); ok {
+		if info, err := d.Stat(); err == nil && info.IsDir() {
+			return hiddenDotfilesDir{d}, nil
+		}
+	}
 	return f, nil
+}
+
+// hiddenDotfilesDir omits dot-prefixed entries from directory listings.
+// blockDotfiles already refuses to serve them, but the generated index
+// still advertised names such as .env and .git to every client.
+type hiddenDotfilesDir struct {
+	fs.ReadDirFile
+}
+
+func (d hiddenDotfilesDir) ReadDir(n int) ([]fs.DirEntry, error) {
+	for {
+		entries, err := d.ReadDirFile.ReadDir(n)
+		kept := entries[:0]
+		for _, e := range entries {
+			if !strings.HasPrefix(e.Name(), ".") {
+				kept = append(kept, e)
+			}
+		}
+		// With n > 0 an all-dotfile batch would return no entries and no
+		// error, which callers read as "call again" at best; keep reading
+		// until something survives the filter or the directory is done.
+		if n <= 0 || len(kept) > 0 || err != nil {
+			return kept, err
+		}
+	}
 }
 
 // notFound rewrites an error the root refused into one that satisfies

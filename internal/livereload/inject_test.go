@@ -510,3 +510,33 @@ func BenchmarkLiveReloadStreaming(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkIndexFold(b *testing.B) {
+	page := append(bytes.Repeat([]byte("<div class=\"row\"><p>lorem ipsum dolor sit amet</p></div>\n"), 4000), []byte("</BODY></html>")...)
+	b.SetBytes(int64(len(page)))
+	for b.Loop() {
+		if indexFold(page, bodyCloseTag) < 0 {
+			b.Fatal("marker not found")
+		}
+	}
+}
+
+func TestIndexFold(t *testing.T) {
+	tests := []struct {
+		haystack string
+		want     int
+	}{
+		{"", -1},
+		{"</body", -1},
+		{"</body>", 0},
+		{"x</BoDy>", 1},
+		{"<<</body>", 2},
+		{"< /body></body>", 8},
+		{"<p></p></bod", -1},
+	}
+	for _, tt := range tests {
+		if got := indexFold([]byte(tt.haystack), bodyCloseTag); got != tt.want {
+			t.Errorf("indexFold(%q) = %d, want %d", tt.haystack, got, tt.want)
+		}
+	}
+}

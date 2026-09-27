@@ -284,15 +284,26 @@ func (w *injectWriter) adjustContentLength() {
 
 // indexFold returns the index of needle in haystack using case-insensitive
 // comparison, or -1. It performs no allocations.
+//
+// needle must start with a byte that has no case ("<" for </body>). That
+// lets it jump between candidate positions with bytes.IndexByte, which is
+// vectorised, instead of running EqualFold at every offset of the page.
 func indexFold(haystack, needle []byte) int {
 	n := len(needle)
-	if n == 0 || len(haystack) < n {
+	if n == 0 {
 		return -1
 	}
-	for i := 0; i+n <= len(haystack); i++ {
+	first := needle[0]
+	for i := 0; i+n <= len(haystack); {
+		j := bytes.IndexByte(haystack[i:len(haystack)-n+1], first)
+		if j < 0 {
+			return -1
+		}
+		i += j
 		if bytes.EqualFold(haystack[i:i+n], needle) {
 			return i
 		}
+		i++
 	}
 	return -1
 }
