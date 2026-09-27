@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -113,5 +114,77 @@ func TestNewServerRejectsNonDirectory(t *testing.T) {
 	}
 	if _, err := NewServer("0", filepath.Join(dir, "does-not-exist")); err == nil {
 		t.Error("NewServer with a missing served dir: want error, got nil")
+	}
+}
+
+// TestDirectoryListingHidesDotfiles verifies generated directory indexes do
+// not advertise dotfiles, which blockDotfiles refuses to serve anyway.
+func TestDirectoryListingHidesDotfiles(t *testing.T) {
+	dir := mkdirFiles(t, map[string]string{
+		".env":           "SECRET=1",
+		".git/HEAD":      "ref: refs/heads/main",
+		"visible.txt":    "hi",
+		"sub/.npmrc":     "token",
+		"sub/public.txt": "hi",
+	})
+	h := newTestServer(t, dir)
+
+	for path, tc := range map[string]struct{ want, hidden []string }{
+		"/":     {want: []string{"visible.txt", "sub/"}, hidden: []string{".env", ".git"}},
+		"/sub/": {want: []string{"public.txt"}, hidden: []string{".npmrc"}},
+	} {
+		rec := get(t, h, path)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200", path, rec.Code)
+		}
+		body := rec.Body.String()
+		for _, name := range tc.want {
+			if !strings.Contains(body, name) {
+				t.Errorf("GET %s listing missing %q: %q", path, name, body)
+			}
+		}
+		for _, name := range tc.hidden {
+			if strings.Contains(body, name) {
+				t.Errorf("GET %s listing leaks %q: %q", path, name, body)
+			}
+		}
+	}
+}
+
+// TestHiddenDotfilesDirBatchedReadDir verifies ReadDir(n) with n > 0 never
+// returns an empty batch without an error while entries remain.
+func TestHiddenDotfilesDirBatchedReadDir(t *testing.T) {
+	dir := mkdirFiles(t, map[string]string{".a": "", ".b": "", ".c": "", "z.txt": ""})
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatalf("OpenRoot: %v", err)
+	}
+	defer func() { _ = root.Close() }()
+
+	f, err := containedFS{fsys: root.FS()}.Open(".")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	d, ok := f.(fs.ReadDirFile)
+	if !ok {
+		t.Fatalf("directory is not an fs.ReadDirFile: %T", f)
+	}
+
+	var names []string
+	for {
+		entries, err := d.ReadDir(1)
+		if len(entries) == 0 && err == nil {
+			t.Fatal("ReadDir(1) returned no entries and no error")
+		}
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		if err != nil {
+			break
+		}
+	}
+	if len(names) != 1 || names[0] != "z.txt" {
+		t.Errorf("entries = %v, want [z.txt]", names)
 	}
 }

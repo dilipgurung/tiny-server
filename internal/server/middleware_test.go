@@ -24,6 +24,11 @@ func TestIsDotfilePath(t *testing.T) {
 		{"/sub/.env", true},
 		{"/sub/dir/page.html", false},
 		{"/.hidden/file.txt", true},
+		{"/sub/.git/", true},
+		{"/..", true},
+		{"/file.with.dots", false},
+		{"/dir./x", false},
+		{"", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
@@ -153,8 +158,9 @@ func TestFullStackHTMLResponse(t *testing.T) {
 func TestLogRequest(t *testing.T) {
 	// Capture log output so the test stays quiet.
 	var buf bytes.Buffer
+	old := log.Writer()
 	log.SetOutput(&buf)
-	defer log.SetOutput(log.Writer())
+	defer log.SetOutput(old)
 
 	called := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -175,5 +181,26 @@ func TestLogRequest(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "/some/path") {
 		t.Errorf("log output missing request path; got %q", buf.String())
+	}
+}
+
+// TestLogRequestEscapesPath verifies a percent-encoded newline in the request
+// path cannot forge an extra log line.
+func TestLogRequestEscapesPath(t *testing.T) {
+	var buf bytes.Buffer
+	old := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(old)
+
+	handler := logRequest(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	req := httptest.NewRequest(http.MethodGet, "/a%0Aforged%20line", nil)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	out := strings.TrimSuffix(buf.String(), "\n")
+	if strings.Contains(out, "\n") {
+		t.Errorf("log output spans multiple lines: %q", buf.String())
+	}
+	if !strings.Contains(out, "/a%0Aforged%20line") {
+		t.Errorf("log output missing escaped path; got %q", out)
 	}
 }

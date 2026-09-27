@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/dilipgurung/tiny-server/internal/livereload"
@@ -98,6 +99,19 @@ func (s *Server) Listen() error {
 	return nil
 }
 
+// Port reports the port the server is bound to. After Listen this is the
+// real port, which differs from the requested one for "-p 0"; before Listen
+// it is the requested port.
+func (s *Server) Port() string {
+	if s.listener != nil {
+		if addr, ok := s.listener.Addr().(*net.TCPAddr); ok {
+			return strconv.Itoa(addr.Port)
+		}
+	}
+	_, port, _ := net.SplitHostPort(s.httpServer.Addr)
+	return port
+}
+
 func (s *Server) Start() error {
 	if s.listener == nil {
 		if err := s.Listen(); err != nil {
@@ -114,12 +128,15 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// ("context deadline exceeded") whenever a browser tab is open.
 	s.cancel()
 	_ = s.watcher.Close()
-	_ = s.root.Close()
 	err := s.httpServer.Shutdown(ctx)
 	// Shutdown closes listeners it is serving; close ours explicitly in case
 	// Start was never reached (a failure between Listen and Start).
 	if s.listener != nil {
 		_ = s.listener.Close()
 	}
+	// Close the root only once in-flight requests have drained: closing it
+	// first made every request still being served during graceful shutdown
+	// fail to open its file.
+	_ = s.root.Close()
 	return err
 }

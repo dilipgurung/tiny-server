@@ -71,7 +71,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitFail
 	}
 
-	srv.PrintInfo(*port, serveDir)
+	srv.PrintInfo(srv.Port(), serveDir)
 
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
